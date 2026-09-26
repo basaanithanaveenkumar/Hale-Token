@@ -163,11 +163,19 @@ fn dot_lanes(w: &[f32], x: &[f32], acc: &mut [f32; LANES]) -> f32 {
 /// stack buffer, then run the vectorised f32 dot product on it. Two simple
 /// loops vectorise far better than one loop that decodes and multiplies.
 #[inline(always)]
-fn dot_decoded(row: &[u8], x: &[f32], bytes_per_value: usize, decode: impl Fn(&[u8], &mut [f32])) -> f32 {
+fn dot_decoded(
+    row: &[u8],
+    x: &[f32],
+    bytes_per_value: usize,
+    decode: impl Fn(&[u8], &mut [f32]),
+) -> f32 {
     let mut acc = [0.0f32; LANES];
     let mut tail = 0.0f32;
     let mut buf = [0.0f32; DECODE_BLOCK];
-    for (wb, xb) in row.chunks(DECODE_BLOCK * bytes_per_value).zip(x.chunks(DECODE_BLOCK)) {
+    for (wb, xb) in row
+        .chunks(DECODE_BLOCK * bytes_per_value)
+        .zip(x.chunks(DECODE_BLOCK))
+    {
         let w = &mut buf[..xb.len()];
         decode(wb, w);
         tail += dot_lanes(w, xb, &mut acc);
@@ -399,7 +407,11 @@ mod tests {
             let mut shifted = vec![0u8; bytes.len() + 1];
             shifted[1..].copy_from_slice(&bytes);
             let (aligned, unaligned) = (&bytes[..], &shifted[1..]);
-            assert_eq!(dot(dtype, aligned, &x), dot(dtype, unaligned, &x), "{dtype} dot");
+            assert_eq!(
+                dot(dtype, aligned, &x),
+                dot(dtype, unaligned, &x),
+                "{dtype} dot"
+            );
             let (mut a, mut b) = (vec![0.0; 100], vec![0.0; 100]);
             decode_row(dtype, aligned, &mut a);
             decode_row(dtype, unaligned, &mut b);
