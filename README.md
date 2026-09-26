@@ -154,6 +154,24 @@ Deep dives: [architecture](docs/architecture.md) ·
 | Cross-check | `hale logits` vs Hugging Face `transformers` on fixtures and a real MoE | `scripts/reference/compare_with_transformers.py` |
 | Apple Silicon | All of the above on GitHub's arm64 macOS runners | `.github/workflows/ci.yml` |
 
+### Measured on Apple Silicon (GitHub `macos-14` runner, Apple M1 VM)
+
+Real trained MoE: [`Isotonic/TinyMixtral-4x248M-MoE`](https://huggingface.co/Isotonic/TinyMixtral-4x248M-MoE)
+(Mixtral architecture, 12 layers × 4 experts, top-2), prompt *"The capital of France is"*:
+
+| Check | Result |
+|---|---|
+| `hale logits` vs `transformers` (bf16 checkpoint) | relative RMS error **1.2e-6**, top-1 agreement **100%** |
+| `hale logits` vs `transformers` (q8_0 expert pack) | relative RMS error **0.42%**, top-1 agreement **100%** |
+| Greedy output | "**Paris.** France is the capital of France. ..." |
+| Decode, experts resident (q8_0) | **25.9 tok/s** |
+| Decode, experts streamed from SSD (cache = 25%) | **10.9 tok/s**, SSD read at **5.28 GB/s** |
+
+That run also found a flaw in the first placement policy, now fixed: a pure
+LRU smaller than one token's working set thrashes (0% hits), so small
+budgets now pin their experts instead (see
+[memory tiering](docs/memory-tiering.md#the-planner)).
+
 ```bash
 cargo test                       # unit + integration + litmus
 ./scripts/smoke_test.sh          # install and exercise the CLI

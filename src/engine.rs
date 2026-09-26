@@ -261,6 +261,36 @@ fn first_expert(config: &ModelConfig) -> ExpertKey {
     )
 }
 
+/// Picks `n` experts to pin: the hottest ones from past runs first, then
+/// (with no or too little history) experts spread evenly over the layers,
+/// so every layer gets the same share of hits.
+fn choose_pinned(
+    routing: &RoutingStats,
+    all: &[ExpertKey],
+    num_experts: usize,
+    n: usize,
+) -> Vec<ExpertKey> {
+    if n >= all.len() {
+        return all.to_vec();
+    }
+    let mut chosen = routing.hottest(n);
+    let mut taken: std::collections::HashSet<ExpertKey> = chosen.iter().copied().collect();
+    // `all` is layer-major; visiting it expert-major interleaves the layers.
+    let layers = all.len() / num_experts.max(1);
+    for e in 0..num_experts {
+        for l in 0..layers {
+            if chosen.len() == n {
+                return chosen;
+            }
+            let key = all[l * num_experts + e];
+            if taken.insert(key) {
+                chosen.push(key);
+            }
+        }
+    }
+    chosen
+}
+
 /// Turns the plan (or an explicit RAM budget) into concrete tier contents.
 fn cache_policy(
     config: &ModelConfig,
@@ -277,12 +307,9 @@ fn cache_policy(
         .filter(|l| config.is_moe_layer(*l))
         .flat_map(|l| (0..config.num_experts).map(move |e| ExpertKey::new(l, e)))
         .collect();
-    let split = planner::split_budget(budget / expert_bytes, all.len(), routing.total() > 0);
-    let pinned = if split.pinned == all.len() {
-        all
-    } else {
-        routing.hottest(split.pinned)
-    };
+    let per_token = config.num_moe_layers() * config.experts_per_token;
+    let split = planner::split_budget(budget / expert_bytes, all.len(), per_token);
+    let pinned = choose_pinned(routing, &all, config.num_experts, split.pinned);
     CachePolicy {
         pinned,
         lru_bytes: split.lru * expert_bytes,

@@ -87,12 +87,21 @@ t_token   = max(t_memory, t_compute) + t_ssd
 SSD time is added rather than overlapped because a layer cannot start
 until its experts have arrived.
 
-Placement policy:
+Placement policy (`split_budget` and `Engine::choose_pinned`):
 
 1. everything fits → pin everything (no SSD traffic);
-2. routing statistics exist → pin the hottest half of the budget, LRU the rest;
-3. no statistics yet → the whole budget is LRU (recency is the best guess),
-   and the run's routing is saved so the next start can pin.
+2. the RAM budget is smaller than **two tokens' working set**
+   (`2 × moe_layers × k` experts) → pin every slot, no LRU. Each token visits
+   the layers in the same order, so the access pattern is cyclic, and an
+   LRU smaller than the cycle evicts each expert just before it is needed
+   again. On Apple Silicon CI, TinyMixtral with a cache of 25% of its experts
+   had a **0% hit rate under pure LRU**. A pinned set of the same size hits
+   about 25% of the time even with uniform routing;
+3. otherwise → half pinned, half LRU.
+
+Pinned experts are the hottest ones from `hale-routing.json`. If there is
+no history yet, they are spread evenly across layers, so every layer gets
+the same share of hits.
 
 Measure your machine and feed the planner real numbers:
 

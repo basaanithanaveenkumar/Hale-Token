@@ -115,10 +115,11 @@ fn routing_stats_warm_start_pins_the_hottest_experts() {
     let expert_bytes = first.model().experts().stats().bytes_loaded as usize
         / first.model().experts().stats().misses as usize;
 
-    // Second start with room for 4 experts: 2 pinned (hottest) + 2 LRU.
+    // Second start with room for 4 experts. That is below one token's
+    // working set (2 MoE layers x top-3), so all 4 slots are pinned, hottest first.
     let second = load(packed.path(), 4 * expert_bytes, stats_dir.path());
     let s = second.model().experts().stats();
-    assert_eq!(s.pinned_experts, 2, "{s:?}");
+    assert_eq!((s.pinned_experts, s.lru_capacity_bytes), (4, 0), "{s:?}");
     teacher_forced_logits(&second, &exp.tokens);
     let s = second.model().experts().stats();
     assert!(s.pinned_hits > 0, "hottest experts should be hit: {s:?}");

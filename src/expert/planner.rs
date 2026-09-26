@@ -243,21 +243,26 @@ pub struct TierSplit {
 
 /// Divides `experts_in_ram` slots between the pinned and LRU tiers
 /// (the placement policy from the module docs).
+///
+/// `per_token_experts` is how many experts one token touches
+/// (`moe_layers x k`). Every token walks the layers in the same order, so
+/// the access pattern is cyclic; an LRU smaller than one token's working
+/// set evicts each expert just before it is needed again and hits almost
+/// never (measured: 0% on TinyMixtral with a 25% cache). Below twice the
+/// working set every slot is therefore pinned instead.
 pub fn split_budget(
     experts_in_ram: usize,
     total_experts: usize,
-    have_routing_stats: bool,
+    per_token_experts: usize,
 ) -> TierSplit {
     let n = experts_in_ram.min(total_experts);
-    if n == total_experts {
+    if n == total_experts || n < 2 * per_token_experts {
         TierSplit { pinned: n, lru: 0 }
-    } else if have_routing_stats {
+    } else {
         TierSplit {
             pinned: n / 2,
             lru: n - n / 2,
         }
-    } else {
-        TierSplit { pinned: 0, lru: n }
     }
 }
 
@@ -278,7 +283,11 @@ pub fn plan(req: &PlanRequest) -> Plan {
 
     let experts_in_ram = ((expert_ram_bytes / expert_bytes).floor() as usize).min(total_experts);
     let fully_resident = experts_in_ram == total_experts;
-    let split = split_budget(experts_in_ram, total_experts, req.have_routing_stats);
+    let split = split_budget(
+        experts_in_ram,
+        total_experts,
+        m.moe_layers * m.experts_per_token,
+    );
     let (pinned_experts, lru_bytes) = (split.pinned, split.lru as f64 * expert_bytes);
     let expected_hit_rate = if total_experts == 0 {
         1.0
@@ -380,6 +389,15 @@ mod tests {
             assert!(tps >= last, "{ram} GB: {tps} < {last}");
             last = tps;
         }
+    }
+
+    #[test]
+    fn small_caches_pin_instead_of_thrashing_an_lru() {
+        // 12 layers x top-2 = 24 experts per token.
+        assert_eq!(split_budget(12, 48, 24), TierSplit { pinned: 12, lru: 0 });
+        assert_eq!(split_budget(47, 48, 24), TierSplit { pinned: 47, lru: 0 });
+        assert_eq!(split_budget(100, 1000, 24), TierSplit { pinned: 50, lru: 50 });
+        assert_eq!(split_budget(2000, 1000, 24), TierSplit { pinned: 1000, lru: 0 });
     }
 
     #[test]

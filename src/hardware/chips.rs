@@ -53,7 +53,9 @@ pub const APPLE_CHIPS: &[ChipSpec] = &[
 ///
 /// Longer names are tried first so `"M3 Max"` never matches plain `"M3"`.
 pub fn lookup_chip(name: &str) -> Option<&'static ChipSpec> {
-    let wanted = normalise(name);
+    // Virtual machines report e.g. "Apple M1 (Virtual)"; ignore the note.
+    let base = name.split('(').next().unwrap_or(name);
+    let wanted = normalise(base);
     let wanted = wanted.strip_prefix("apple").unwrap_or(&wanted);
     let mut chips: Vec<&ChipSpec> = APPLE_CHIPS.iter().collect();
     chips.sort_by_key(|c| std::cmp::Reverse(c.name.len()));
@@ -80,6 +82,11 @@ mod tests {
         assert_eq!(lookup_chip("Apple M3 Max").unwrap().name, "M3 Max");
         assert_eq!(lookup_chip("m4-pro").unwrap().name, "M4 Pro");
         assert_eq!(lookup_chip("Apple M1").unwrap().name, "M1");
+        assert_eq!(lookup_chip("Apple M1 (Virtual)").unwrap().name, "M1");
+        assert_eq!(
+            lookup_chip("Apple M2 Pro (Virtual)").unwrap().name,
+            "M2 Pro"
+        );
         assert_eq!(lookup_chip("M5").unwrap().memory_bandwidth_gbps, 153.0);
         assert!(lookup_chip("Intel Core i9").is_none());
     }
