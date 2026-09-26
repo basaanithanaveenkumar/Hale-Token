@@ -5,7 +5,9 @@
 //! intrinsics are used; the loops are shaped so LLVM vectorises them onto
 //! Apple Silicon's 128-bit NEON registers:
 //!
-//! * **Float formats** use eight independent accumulators. Floating-point
+//! * **Float formats** decode 64 values at a time into a stack buffer (a
+//!   shift for bf16, hardware `fcvtl` for f16, nothing for aligned f32) and
+//!   then multiply with eight independent accumulators. Floating-point
 //!   addition is not associative, so the compiler will not split a single
 //!   accumulator into SIMD lanes on its own.
 //! * **Quantized formats** first quantize the activation vector `x` to 8-bit
@@ -141,51 +143,85 @@ fn dot_q4_0(row: &[u8], x: &Q8Activations) -> f32 {
     total
 }
 
-fn dot_f32(row: &[u8], x: &[f32]) -> f32 {
-    let mut acc = [0.0f32; LANES];
-    for (w, xs) in row.chunks_exact(4 * LANES).zip(x.chunks_exact(LANES)) {
+/// Elements decoded per step by the float kernels: small enough to stay in
+/// registers/L1 (256 bytes of f32), large enough to amortise the loop.
+const DECODE_BLOCK: usize = 64;
+
+/// Dot product of `x` with `f32` values `w` using [`LANES`] accumulators.
+#[inline(always)]
+fn dot_lanes(w: &[f32], x: &[f32], acc: &mut [f32; LANES]) -> f32 {
+    for (ws, xs) in w.chunks_exact(LANES).zip(x.chunks_exact(LANES)) {
         for l in 0..LANES {
-            let b = &w[4 * l..4 * l + 4];
-            acc[l] += f32::from_le_bytes([b[0], b[1], b[2], b[3]]) * xs[l];
+            acc[l] += ws[l] * xs[l];
         }
     }
-    let mut sum = reduce(acc);
-    let done = x.len() / LANES * LANES;
-    for i in done..x.len() {
-        let b = &row[4 * i..4 * i + 4];
-        sum += f32::from_le_bytes([b[0], b[1], b[2], b[3]]) * x[i];
+    let done = w.len() / LANES * LANES;
+    w[done..].iter().zip(&x[done..]).map(|(a, b)| a * b).sum()
+}
+
+/// Shared driver for the float formats: decode a block of the row into a
+/// stack buffer, then run the vectorised f32 dot product on it. Two simple
+/// loops vectorise far better than one loop that decodes and multiplies.
+#[inline(always)]
+fn dot_decoded(row: &[u8], x: &[f32], bytes_per_value: usize, decode: impl Fn(&[u8], &mut [f32])) -> f32 {
+    let mut acc = [0.0f32; LANES];
+    let mut tail = 0.0f32;
+    let mut buf = [0.0f32; DECODE_BLOCK];
+    for (wb, xb) in row.chunks(DECODE_BLOCK * bytes_per_value).zip(x.chunks(DECODE_BLOCK)) {
+        let w = &mut buf[..xb.len()];
+        decode(wb, w);
+        tail += dot_lanes(w, xb, &mut acc);
     }
-    sum
+    reduce(acc) + tail
+}
+
+fn dot_f32(row: &[u8], x: &[f32]) -> f32 {
+    // Zero-copy when the bytes are 4-byte aligned (the normal case).
+    if let Ok(w) = bytemuck::try_cast_slice::<u8, f32>(row) {
+        let mut acc = [0.0f32; LANES];
+        let tail = dot_lanes(w, x, &mut acc);
+        return reduce(acc) + tail;
+    }
+    dot_decoded(row, x, 4, |b, out| decode_row(DType::F32, b, out))
 }
 
 fn dot_bf16(row: &[u8], x: &[f32]) -> f32 {
-    let mut acc = [0.0f32; LANES];
-    for (w, xs) in row.chunks_exact(2 * LANES).zip(x.chunks_exact(LANES)) {
-        for l in 0..LANES {
-            acc[l] += bf16_bits_to_f32(w[2 * l], w[2 * l + 1]) * xs[l];
-        }
-    }
-    let mut sum = reduce(acc);
-    let done = x.len() / LANES * LANES;
-    for i in done..x.len() {
-        sum += bf16_bits_to_f32(row[2 * i], row[2 * i + 1]) * x[i];
-    }
-    sum
+    dot_decoded(row, x, 2, decode_bf16)
 }
 
 fn dot_f16(row: &[u8], x: &[f32]) -> f32 {
-    let mut acc = [0.0f32; LANES];
-    for (w, xs) in row.chunks_exact(2 * LANES).zip(x.chunks_exact(LANES)) {
-        for l in 0..LANES {
-            acc[l] += read_f16(&w[2 * l..]) * xs[l];
+    dot_decoded(row, x, 2, decode_f16)
+}
+
+/// bf16 -> f32 is a 16-bit left shift; on aligned input this compiles to
+/// NEON `ushll`/`shll` over eight values at a time.
+fn decode_bf16(bytes: &[u8], out: &mut [f32]) {
+    match bytemuck::try_cast_slice::<u8, u16>(bytes) {
+        Ok(bits) => {
+            for (o, &b) in out.iter_mut().zip(bits) {
+                *o = f32::from_bits(u32::from(b) << 16);
+            }
+        }
+        Err(_) => {
+            for (o, b) in out.iter_mut().zip(bytes.chunks_exact(2)) {
+                *o = bf16_bits_to_f32(b[0], b[1]);
+            }
         }
     }
-    let mut sum = reduce(acc);
-    let done = x.len() / LANES * LANES;
-    for i in done..x.len() {
-        sum += read_f16(&row[2 * i..]) * x[i];
+}
+
+/// f16 -> f32 via `half`'s slice conversion, which uses the hardware
+/// `fcvtl` instruction on Apple Silicon.
+fn decode_f16(bytes: &[u8], out: &mut [f32]) {
+    use half::slice::HalfFloatSliceExt;
+    match bytemuck::try_cast_slice::<u8, f16>(bytes) {
+        Ok(halves) => halves.convert_to_f32_slice(out),
+        Err(_) => {
+            for (o, b) in out.iter_mut().zip(bytes.chunks_exact(2)) {
+                *o = read_f16(b);
+            }
+        }
     }
-    sum
 }
 
 /// Decodes one encoded row into `out` (`out.len()` elements).
@@ -196,16 +232,8 @@ pub fn decode_row(dtype: DType, row: &[u8], out: &mut [f32]) {
                 *o = f32::from_le_bytes([b[0], b[1], b[2], b[3]]);
             }
         }
-        DType::F16 => {
-            for (o, b) in out.iter_mut().zip(row.chunks_exact(2)) {
-                *o = read_f16(b);
-            }
-        }
-        DType::BF16 => {
-            for (o, b) in out.iter_mut().zip(row.chunks_exact(2)) {
-                *o = bf16_bits_to_f32(b[0], b[1]);
-            }
-        }
+        DType::F16 => decode_f16(row, out),
+        DType::BF16 => decode_bf16(row, out),
         DType::Q8_0 => {
             for (os, block) in out
                 .chunks_exact_mut(QK)
@@ -359,6 +387,24 @@ mod tests {
         let mut bytes = Vec::new();
         encode_row(DType::F32, &w, &mut bytes);
         assert!((dot(DType::F32, &bytes, &x) - naive_dot(&w, &x)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn unaligned_rows_give_the_same_answer_as_aligned_ones() {
+        let (w, x) = (values(100, 4), values(100, 8));
+        for dtype in [DType::F32, DType::F16, DType::BF16] {
+            let mut bytes = Vec::new();
+            encode_row(dtype, &w, &mut bytes);
+            // Copy into a buffer shifted by one byte to force the fallback path.
+            let mut shifted = vec![0u8; bytes.len() + 1];
+            shifted[1..].copy_from_slice(&bytes);
+            let (aligned, unaligned) = (&bytes[..], &shifted[1..]);
+            assert_eq!(dot(dtype, aligned, &x), dot(dtype, unaligned, &x), "{dtype} dot");
+            let (mut a, mut b) = (vec![0.0; 100], vec![0.0; 100]);
+            decode_row(dtype, aligned, &mut a);
+            decode_row(dtype, unaligned, &mut b);
+            assert_eq!(a, b, "{dtype} decode");
+        }
     }
 
     #[test]
