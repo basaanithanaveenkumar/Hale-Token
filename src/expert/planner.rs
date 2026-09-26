@@ -396,8 +396,20 @@ mod tests {
         // 12 layers x top-2 = 24 experts per token.
         assert_eq!(split_budget(12, 48, 24), TierSplit { pinned: 12, lru: 0 });
         assert_eq!(split_budget(47, 48, 24), TierSplit { pinned: 47, lru: 0 });
-        assert_eq!(split_budget(100, 1000, 24), TierSplit { pinned: 50, lru: 50 });
-        assert_eq!(split_budget(2000, 1000, 24), TierSplit { pinned: 1000, lru: 0 });
+        assert_eq!(
+            split_budget(100, 1000, 24),
+            TierSplit {
+                pinned: 50,
+                lru: 50
+            }
+        );
+        assert_eq!(
+            split_budget(2000, 1000, 24),
+            TierSplit {
+                pinned: 1000,
+                lru: 0
+            }
+        );
     }
 
     #[test]
