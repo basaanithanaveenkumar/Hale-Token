@@ -58,8 +58,8 @@ pub fn generate(
     options: &GenerationOptions,
     mut on_token: impl FnMut(u32) -> bool,
 ) -> Result<(Vec<u32>, GenerationStats)> {
-    let needed = prompt.len() + options.max_new_tokens;
     let max = model.config.max_position_embeddings;
+    let needed = prompt.len().saturating_add(options.max_new_tokens);
     if needed > max {
         return Err(HaleError::ContextOverflow { needed, max });
     }

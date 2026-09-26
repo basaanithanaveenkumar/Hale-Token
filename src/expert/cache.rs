@@ -146,6 +146,10 @@ impl ExpertProvider for ExpertCache {
         }
 
         // Pass 2: load all misses concurrently (keeps the NVMe queue full).
+        // The lock is released during I/O, so two threads missing the same
+        // expert would both read it; harmless (the second insert replaces the
+        // first) and irrelevant for today's single-sequence engine. A server
+        // with concurrent requests should add per-key in-flight tracking.
         let missing: Vec<ExpertKey> = keys
             .iter()
             .zip(&found)

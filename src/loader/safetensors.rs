@@ -221,7 +221,11 @@ fn parse_header(path: &Path, bytes: &[u8]) -> Result<Vec<(String, TensorInfo, us
             source: e,
         })?;
         let [begin, end] = info.data_offsets;
-        if begin > end || data_start + end > bytes.len() {
+        // checked_add: offsets come from the file and must not wrap around.
+        let in_bounds = data_start
+            .checked_add(end)
+            .is_some_and(|e| e <= bytes.len());
+        if begin > end || !in_bounds {
             return Err(bad(&format!("tensor `{name}` points outside the file")));
         }
         let start = data_start + begin;
@@ -331,6 +335,22 @@ mod tests {
         .unwrap();
         let ckpt = SafetensorsCheckpoint::open_dir(dir.path()).unwrap();
         assert_eq!(ckpt.tensor_names(), vec!["a"]);
+    }
+
+    #[test]
+    fn rejects_offsets_that_would_overflow() {
+        let dir = tempfile::tempdir().unwrap();
+        let header = format!(
+            r#"{{"t":{{"dtype":"F32","shape":[1],"data_offsets":[0,{}]}}}}"#,
+            u64::MAX - 4
+        );
+        let mut file = (header.len() as u64).to_le_bytes().to_vec();
+        file.extend_from_slice(header.as_bytes());
+        std::fs::write(dir.path().join("x.safetensors"), file).unwrap();
+        assert!(matches!(
+            SafetensorsCheckpoint::open_dir(dir.path()),
+            Err(HaleError::Safetensors { .. })
+        ));
     }
 
     #[test]

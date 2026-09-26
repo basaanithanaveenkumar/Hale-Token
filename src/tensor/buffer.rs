@@ -54,7 +54,10 @@ impl ByteBuf {
     /// Panics if the window lies outside the map; callers validate offsets
     /// when they parse file headers.
     pub fn mapped(map: Arc<Mmap>, offset: usize, len: usize) -> Self {
-        assert!(offset + len <= map.len(), "mapped window out of bounds");
+        assert!(
+            offset.checked_add(len).is_some_and(|end| end <= map.len()),
+            "mapped window out of bounds"
+        );
         ByteBuf {
             storage: Storage::Mapped(map),
             offset,
@@ -87,7 +90,10 @@ impl ByteBuf {
     /// # Panics
     /// Panics if `start + len` exceeds this window.
     pub fn slice(&self, start: usize, len: usize) -> ByteBuf {
-        assert!(start + len <= self.len, "slice out of bounds");
+        assert!(
+            start.checked_add(len).is_some_and(|end| end <= self.len),
+            "slice out of bounds"
+        );
         ByteBuf {
             storage: self.storage.clone(),
             offset: self.offset + start,
