@@ -1,0 +1,44 @@
+[package]
+name = "hale-token"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "Run data-center scale Mixture-of-Experts LLMs on Apple Silicon by tiering experts across unified memory and SSD"
+license = "Apache-2.0"
+repository = "https://github.com/basaanithanaveenkumar/Hale-Token"
+readme = "README.md"
+keywords = ["llm", "moe", "apple-silicon", "inference", "mixture-of-experts"]
+categories = ["command-line-utilities", "science"]
+default-run = "hale"
+
+[lib]
+name = "hale"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hale"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+half = "2.4"
+libc = "0.2"
+memmap2 = "0.9"
+rayon = "1.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+
+[dev-dependencies]
+tempfile = "3.10"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = false
+
+# Tests exercise real matrix math; unoptimised builds are ~30x slower.
+[profile.test]
+opt-level = 2
