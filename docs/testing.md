@@ -104,6 +104,6 @@ q8_0 pack, then generates text with experts streamed through a cache holding
 | Job | Runner | Does |
 |---|---|---|
 | lint | ubuntu | `fmt --check`, `clippy -D warnings`, `doc -D warnings` |
-| apple-silicon | macos-14, macos-15, macos-26 (arm64) | all tests, smoke test, `sysinfo`, memory and kernel benchmarks |
+| apple-silicon | macos-14, macos-15, macos-latest (arm64) | all tests, smoke test, `sysinfo`, memory and kernel benchmarks |
 | reference-transformers | macos-14 | fixtures vs transformers |
 | real-moe | macos-14 | `verify_real_model.sh` on a trained Mixtral-architecture MoE; report uploaded as an artifact |

@@ -47,8 +47,13 @@ Good first choices:
 
 ```bash
 pip install -U "huggingface_hub[cli]"
-huggingface-cli download Qwen/Qwen3-30B-A3B --local-dir models/Qwen3-30B-A3B
+huggingface-cli download Qwen/Qwen3-30B-A3B --local-dir models/Qwen3-30B-A3B \
+    --include "*.json" "model*.safetensors" "tokenizer*"
 ```
+
+The `--include` filter skips duplicate formats some repositories ship (for
+example Mistral's `consolidated.*` files). Hale-Token only reads the shards
+that `model.safetensors.index.json` lists.
 
 ## 5. Convert (recommended)
 

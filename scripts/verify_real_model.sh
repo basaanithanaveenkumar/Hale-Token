@@ -25,7 +25,7 @@ python - "$REPO" "$MODEL" <<'PY'
 import sys
 from huggingface_hub import snapshot_download
 snapshot_download(sys.argv[1], local_dir=sys.argv[2],
-                  allow_patterns=["*.json", "*.safetensors", "tokenizer*"])
+                  allow_patterns=["*.json", "model*.safetensors", "tokenizer*"])
 PY
 
 "$HALE" info "$MODEL" | tee "$OUT/info.txt"

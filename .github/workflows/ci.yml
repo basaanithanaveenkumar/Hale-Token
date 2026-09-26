@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         # GitHub's arm64 macOS runners are Apple Silicon Macs.
-        os: [macos-14, macos-15, macos-26]
+        os: [macos-14, macos-15, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

@@ -51,8 +51,17 @@ pub struct SafetensorsCheckpoint {
 }
 
 impl SafetensorsCheckpoint {
-    /// Opens every `*.safetensors` file in `dir`.
+    /// Opens the checkpoint in `dir`.
+    ///
+    /// If `model.safetensors.index.json` exists, only the shards it lists
+    /// are opened (some repositories ship extra files, e.g. Mistral's
+    /// `consolidated.safetensors`, with the same weights under other names).
+    /// Otherwise every `*.safetensors` file in `dir` is opened.
     pub fn open_dir(dir: &Path) -> Result<Self> {
+        let index = dir.join("model.safetensors.index.json");
+        if index.exists() {
+            return Self::open_files(&shards_from_index(&index, dir)?);
+        }
         let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
             .map_err(|e| HaleError::io(dir, e))?
             .filter_map(|entry| entry.ok().map(|e| e.path()))
@@ -159,6 +168,27 @@ impl TensorSource for SafetensorsCheckpoint {
         quant::decode_row(dtype, buf.as_bytes(), &mut out);
         Ok(out)
     }
+}
+
+/// Lists the shard files named in a `model.safetensors.index.json`.
+fn shards_from_index(index: &Path, dir: &Path) -> Result<Vec<PathBuf>> {
+    #[derive(Deserialize)]
+    struct Index {
+        weight_map: BTreeMap<String, String>,
+    }
+    let text = std::fs::read_to_string(index).map_err(|e| HaleError::io(index, e))?;
+    let parsed: Index = serde_json::from_str(&text).map_err(|e| HaleError::Json {
+        path: index.to_path_buf(),
+        source: e,
+    })?;
+    let mut shards: Vec<PathBuf> = parsed
+        .weight_map
+        .into_values()
+        .map(|f| dir.join(f))
+        .collect();
+    shards.sort();
+    shards.dedup();
+    Ok(shards)
 }
 
 /// Parses and validates the JSON header of one shard.
@@ -275,6 +305,32 @@ mod tests {
             Err(HaleError::MissingTensor(_))
         ));
         assert!(ckpt.vector("w").is_err(), "2-D tensor is not a vector");
+    }
+
+    #[test]
+    fn index_json_selects_the_listed_shards_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let tensor = |name: &str| {
+            let m = WeightMatrix::from_f32(1, 2, DType::F32, &[1.0, 2.0]).unwrap();
+            vec![(name.to_string(), vec![1, 2], DType::F32, m.bytes().clone())]
+        };
+        write_safetensors(
+            &dir.path().join("model-00001-of-00001.safetensors"),
+            &tensor("a"),
+        )
+        .unwrap();
+        write_safetensors(
+            &dir.path().join("consolidated.safetensors"),
+            &tensor("other"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("model.safetensors.index.json"),
+            r#"{"metadata": {}, "weight_map": {"a": "model-00001-of-00001.safetensors"}}"#,
+        )
+        .unwrap();
+        let ckpt = SafetensorsCheckpoint::open_dir(dir.path()).unwrap();
+        assert_eq!(ckpt.tensor_names(), vec!["a"]);
     }
 
     #[test]
