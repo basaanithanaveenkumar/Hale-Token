@@ -164,12 +164,18 @@ Real trained MoE: [`Isotonic/TinyMixtral-4x248M-MoE`](https://huggingface.co/Iso
 | `hale logits` vs `transformers` (bf16 checkpoint) | relative RMS error **1.2e-6**, top-1 agreement **100%** |
 | `hale logits` vs `transformers` (q8_0 expert pack) | relative RMS error **0.42%**, top-1 agreement **100%** |
 | Greedy output | "**Paris.** France is the capital of France. ..." |
-| Decode, experts resident (q8_0) | **25.9 tok/s** |
-| Decode, experts streamed from SSD (cache = 25%) | **10.9 tok/s**, SSD read at **5.28 GB/s** |
+| Decode, experts resident (q8_0) | **26–34 tok/s** across runs |
+| Decode, experts streamed from SSD (cache = 25%) | **10.3–11.5 tok/s**, expert hit rate 18%, SSD read at 4.2–5.3 GB/s |
+
+<sub>GitHub's macOS runners are shared 3-vCPU M1 VMs; `hale bench memory`
+measures only 7–10 GB/s there, against 68 GB/s on a physical M1. Treat
+these as lower bounds; kernel benchmarks on the VMs vary by up to 3x
+between runs.</sub>
 
 That run also found a flaw in the first placement policy, now fixed: a pure
-LRU smaller than one token's working set thrashes (0% hits), so small
-budgets now pin their experts instead (see
+LRU smaller than one token's working set thrashes (0% hits, 11.9 GB read
+from SSD per 32 tokens). Small budgets now pin their experts instead, which
+gives an 18% hit rate and 9.7 GB read (see
 [memory tiering](docs/memory-tiering.md#the-planner)).
 
 ```bash
