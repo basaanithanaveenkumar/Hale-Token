@@ -2,7 +2,8 @@
 
 use rayon::prelude::*;
 
-use super::{quant, ByteBuf, DType};
+use super::quant::{self, Q8Activations};
+use super::{ByteBuf, DType};
 use crate::error::{HaleError, Result};
 
 /// Rows handed to one rayon task. Small enough to balance well across the
@@ -114,10 +115,14 @@ impl WeightMatrix {
     pub fn matvec(&self, x: &[f32], out: &mut [f32]) {
         assert_eq!(x.len(), self.cols, "matvec input length");
         assert_eq!(out.len(), self.rows, "matvec output length");
-        out.par_iter_mut()
-            .with_min_len(ROWS_PER_TASK)
-            .enumerate()
-            .for_each(|(r, o)| *o = quant::dot(self.dtype, self.row_bytes(r), x));
+        let rows = out.par_iter_mut().with_min_len(ROWS_PER_TASK).enumerate();
+        if self.dtype.block_len() > 1 {
+            // Quantize the input once; every row reuses it.
+            let xq = Q8Activations::quantize(x);
+            rows.for_each(|(r, o)| *o = quant::dot_quantized(self.dtype, self.row_bytes(r), &xq));
+        } else {
+            rows.for_each(|(r, o)| *o = quant::dot(self.dtype, self.row_bytes(r), x));
+        }
     }
 
     /// Single-threaded `out = W x`, for callers that already run in parallel
@@ -125,8 +130,15 @@ impl WeightMatrix {
     pub fn matvec_serial(&self, x: &[f32], out: &mut [f32]) {
         assert_eq!(x.len(), self.cols, "matvec input length");
         assert_eq!(out.len(), self.rows, "matvec output length");
-        for (r, o) in out.iter_mut().enumerate() {
-            *o = quant::dot(self.dtype, self.row_bytes(r), x);
+        if self.dtype.block_len() > 1 {
+            let xq = Q8Activations::quantize(x);
+            for (r, o) in out.iter_mut().enumerate() {
+                *o = quant::dot_quantized(self.dtype, self.row_bytes(r), &xq);
+            }
+        } else {
+            for (r, o) in out.iter_mut().enumerate() {
+                *o = quant::dot(self.dtype, self.row_bytes(r), x);
+            }
         }
     }
 }

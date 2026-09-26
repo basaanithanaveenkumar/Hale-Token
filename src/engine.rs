@@ -68,6 +68,7 @@ pub struct Engine {
     tokenizer: Option<Tokenizer>,
     plan: Plan,
     source_description: String,
+    expert_bytes: usize,
     stats_path: PathBuf,
 }
 
@@ -104,6 +105,7 @@ impl Engine {
             tokenizer,
             plan,
             source_description: source.describe(),
+            expert_bytes: source.expert_bytes(),
             stats_path,
         })
     }
@@ -124,6 +126,21 @@ impl Engine {
     /// Where experts are read from.
     pub fn source_description(&self) -> &str {
         &self.source_description
+    }
+
+    /// Bytes of one routed expert as stored by the expert source.
+    pub fn expert_bytes(&self) -> usize {
+        self.expert_bytes
+    }
+
+    /// Fraction of all experts the RAM tiers can hold - the hit-rate floor
+    /// under uniform routing.
+    pub fn ram_expert_fraction(&self) -> f64 {
+        let c = self.config();
+        let total = (c.num_moe_layers() * c.num_experts).max(1);
+        let s = self.model.experts().stats();
+        let slots = s.pinned_experts + s.lru_capacity_bytes / self.expert_bytes.max(1);
+        (slots as f64 / total as f64).min(1.0)
     }
 
     /// Tokenizes `prompt` (wrapped in `format`), generates, and streams text

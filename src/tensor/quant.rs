@@ -1,11 +1,19 @@
 //! Scalar kernels for every [`DType`]: encode, decode and dot product.
 //!
 //! These are the hottest loops in the engine: decoding a token is dominated
-//! by `dot(row, x)` over every weight row that is touched. The loops are
-//! written with eight independent accumulators so LLVM can map them onto
-//! Apple Silicon's 128-bit NEON registers without any `unsafe` intrinsics.
-//! (Floating-point addition is not associative, so the compiler will not
-//! split a single accumulator into lanes on its own.)
+//! by `dot(row, x)` over every weight row that is touched. No `unsafe`
+//! intrinsics are used; the loops are shaped so LLVM vectorises them onto
+//! Apple Silicon's 128-bit NEON registers:
+//!
+//! * **Float formats** use eight independent accumulators. Floating-point
+//!   addition is not associative, so the compiler will not split a single
+//!   accumulator into SIMD lanes on its own.
+//! * **Quantized formats** first quantize the activation vector `x` to 8-bit
+//!   blocks ([`Q8Activations`], once per mat-vec, shared by every row) and
+//!   then multiply integers. Integer addition *is* associative, so LLVM
+//!   vectorises freely and on M-series chips emits the `sdot` instruction
+//!   (four int8 products summed per lane per cycle). This is the same trick
+//!   llama.cpp uses; it costs ~0.5% extra error.
 //!
 //! Quantized layouts follow GGML:
 //!
@@ -43,15 +51,94 @@ fn bf16_bits_to_f32(lo: u8, hi: u8) -> f32 {
 
 /// Dot product of one encoded row with an `f32` vector.
 ///
-/// `row` must hold exactly `x.len()` elements in `dtype` encoding.
+/// `row` must hold exactly `x.len()` elements in `dtype` encoding. For the
+/// quantized formats this quantizes `x` on every call; mat-vec code should
+/// call [`Q8Activations::quantize`] once and use [`dot_quantized`] instead.
 pub fn dot(dtype: DType, row: &[u8], x: &[f32]) -> f32 {
     match dtype {
         DType::F32 => dot_f32(row, x),
         DType::F16 => dot_f16(row, x),
         DType::BF16 => dot_bf16(row, x),
+        DType::Q8_0 | DType::Q4_0 => dot_quantized(dtype, row, &Q8Activations::quantize(x)),
+    }
+}
+
+/// An activation vector quantized to symmetric 8-bit blocks of [`QK`].
+#[derive(Debug, Clone)]
+pub struct Q8Activations {
+    scales: Vec<f32>,
+    quants: Vec<i8>,
+}
+
+impl Q8Activations {
+    /// Quantizes `x` (length must be a multiple of [`QK`]).
+    pub fn quantize(x: &[f32]) -> Self {
+        assert_eq!(
+            x.len() % QK,
+            0,
+            "activation length must be a multiple of {QK}"
+        );
+        let mut scales = Vec::with_capacity(x.len() / QK);
+        let mut quants = Vec::with_capacity(x.len());
+        for block in x.chunks_exact(QK) {
+            let amax = block.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+            let scale = amax / 127.0;
+            let inv = if scale > 0.0 { 1.0 / scale } else { 0.0 };
+            scales.push(scale);
+            quants.extend(block.iter().map(|v| (v * inv).round() as i8));
+        }
+        Q8Activations { scales, quants }
+    }
+
+    fn block(&self, b: usize) -> (f32, &[i8; QK]) {
+        let q = self.quants[b * QK..(b + 1) * QK]
+            .try_into()
+            .expect("QK values");
+        (self.scales[b], q)
+    }
+}
+
+/// Dot product of a quantized row with pre-quantized activations.
+///
+/// # Panics
+/// Panics if `dtype` is not a quantized format.
+pub fn dot_quantized(dtype: DType, row: &[u8], x: &Q8Activations) -> f32 {
+    match dtype {
         DType::Q8_0 => dot_q8_0(row, x),
         DType::Q4_0 => dot_q4_0(row, x),
+        other => panic!("dot_quantized called with float dtype {other}"),
     }
+}
+
+fn dot_q8_0(row: &[u8], x: &Q8Activations) -> f32 {
+    let mut total = 0.0f32;
+    for (b, block) in row.chunks_exact(DType::Q8_0.block_bytes()).enumerate() {
+        let (x_scale, xq) = x.block(b);
+        let w: &[u8; QK] = block[2..].try_into().expect("QK quants");
+        let mut isum = 0i32;
+        for j in 0..QK {
+            isum += i32::from(w[j] as i8) * i32::from(xq[j]);
+        }
+        total += read_f16(block) * x_scale * isum as f32;
+    }
+    total
+}
+
+fn dot_q4_0(row: &[u8], x: &Q8Activations) -> f32 {
+    const HALF: usize = QK / 2;
+    let mut total = 0.0f32;
+    for (b, block) in row.chunks_exact(DType::Q4_0.block_bytes()).enumerate() {
+        let (x_scale, xq) = x.block(b);
+        let nibbles: &[u8; HALF] = block[2..].try_into().expect("QK/2 bytes");
+        let mut isum = 0i32;
+        for j in 0..HALF {
+            let lo = i32::from(nibbles[j] & 0x0F) - 8;
+            let hi = i32::from(nibbles[j] >> 4) - 8;
+            isum += lo * i32::from(xq[j]) + hi * i32::from(xq[j + HALF]);
+        }
+        total += read_f16(block) * x_scale * isum as f32;
+    }
+    total
 }
 
 fn dot_f32(row: &[u8], x: &[f32]) -> f32 {
@@ -99,48 +186,6 @@ fn dot_f16(row: &[u8], x: &[f32]) -> f32 {
         sum += read_f16(&row[2 * i..]) * x[i];
     }
     sum
-}
-
-fn dot_q8_0(row: &[u8], x: &[f32]) -> f32 {
-    let mut total = 0.0f32;
-    for (block, xs) in row
-        .chunks_exact(DType::Q8_0.block_bytes())
-        .zip(x.chunks_exact(QK))
-    {
-        let scale = read_f16(block);
-        let quants = &block[2..];
-        let mut acc = [0.0f32; LANES];
-        for j in (0..QK).step_by(LANES) {
-            for l in 0..LANES {
-                acc[l] += f32::from(quants[j + l] as i8) * xs[j + l];
-            }
-        }
-        total += scale * reduce(acc);
-    }
-    total
-}
-
-fn dot_q4_0(row: &[u8], x: &[f32]) -> f32 {
-    const HALF: usize = QK / 2;
-    let mut total = 0.0f32;
-    for (block, xs) in row
-        .chunks_exact(DType::Q4_0.block_bytes())
-        .zip(x.chunks_exact(QK))
-    {
-        let scale = read_f16(block);
-        let nibbles = &block[2..];
-        let mut acc = [0.0f32; LANES];
-        for j in (0..HALF).step_by(LANES) {
-            for l in 0..LANES {
-                let byte = nibbles[j + l];
-                let lo = f32::from(byte & 0x0F) - 8.0;
-                let hi = f32::from(byte >> 4) - 8.0;
-                acc[l] += lo * xs[j + l] + hi * xs[j + l + HALF];
-            }
-        }
-        total += scale * reduce(acc);
-    }
-    total
 }
 
 /// Decodes one encoded row into `out` (`out.len()` elements).
@@ -302,7 +347,13 @@ mod tests {
             decode_row(dtype, &bytes, &mut decoded);
             let expect = naive_dot(&decoded, &x);
             let got = dot(dtype, &bytes, &x);
-            assert!((expect - got).abs() < 1e-4, "{dtype}: {expect} vs {got}");
+            // Quantized kernels also quantize `x` to 8 bits (~0.5% error).
+            let tol = if dtype.block_len() > 1 {
+                2e-2 * expect.abs().max(1.0)
+            } else {
+                1e-4
+            };
+            assert!((expect - got).abs() < tol, "{dtype}: {expect} vs {got}");
         }
         let (w, x) = (values(13, 5), values(13, 9));
         let mut bytes = Vec::new();

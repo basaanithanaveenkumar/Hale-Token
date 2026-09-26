@@ -69,14 +69,21 @@ pub fn execute(args: RunArgs) -> hale::Result<()> {
         routing_stats_path: None,
     };
     let engine = Engine::load(&args.model, options)?;
-    let plan = engine.plan();
-    eprintln!(
-        "[hale] experts from {} | pinned {} | LRU {} | planned hit rate >= {:.0}%",
-        engine.source_description(),
-        plan.pinned_experts,
-        format::bytes(plan.lru_bytes),
-        plan.expected_hit_rate * 100.0
-    );
+    let cache = engine.model().experts().stats();
+    if cache.passthrough {
+        eprintln!(
+            "[hale] experts memory-mapped from the checkpoint (OS page cache); run `hale convert` for tiered RAM/SSD caching"
+        );
+    } else {
+        eprintln!(
+            "[hale] experts from {} | pinned {} ({}) | LRU {} | RAM holds {:.0}% of experts",
+            engine.source_description(),
+            cache.pinned_experts,
+            format::bytes(cache.pinned_bytes as f64),
+            format::bytes(cache.lru_capacity_bytes as f64),
+            engine.ram_expert_fraction() * 100.0
+        );
+    }
 
     let prompt_format = match args.format {
         FormatArg::Auto => PromptFormat::for_architecture(engine.config().architecture),

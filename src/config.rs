@@ -2,7 +2,7 @@
 //!
 //! Hugging Face checkpoints ship a `config.json`. Different model families
 //! spell the same idea differently (`num_experts` vs `num_local_experts`), so
-//! we parse the raw file into [`HfConfig`] and then normalise it into one
+//! we parse the raw file into `HfConfig` and then normalise it into one
 //! family-independent [`ModelConfig`] that the rest of the engine uses.
 
 use std::path::Path;

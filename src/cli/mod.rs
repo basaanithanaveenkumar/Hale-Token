@@ -4,6 +4,7 @@ mod bench;
 mod convert;
 mod format;
 mod info;
+mod logits;
 mod plan;
 mod run;
 
@@ -36,6 +37,8 @@ enum Command {
     Bench(bench::BenchArgs),
     /// Show the detected chip and memory.
     Sysinfo,
+    /// Print next-token logits for a token sequence as JSON (for verification).
+    Logits(logits::LogitsArgs),
 }
 
 /// Parses `std::env::args` and runs the chosen command.
@@ -46,6 +49,7 @@ pub fn run() -> hale::Result<()> {
         Command::Info { model } => info::execute(&model),
         Command::Plan(args) => plan::execute(args),
         Command::Bench(args) => bench::execute(args),
+        Command::Logits(args) => logits::execute(args),
         Command::Sysinfo => {
             info::print_sysinfo();
             Ok(())

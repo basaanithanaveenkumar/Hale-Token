@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo doc --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  apple-silicon:
+    name: test on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # GitHub's arm64 macOS runners are Apple Silicon Macs.
+        os: [macos-14, macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Machine
+        run: |
+          uname -m
+          sysctl -n machdep.cpu.brand_string
+          sysctl -n hw.memsize
+      - name: Unit + integration + litmus tests
+        run: cargo test --locked
+      - name: Smoke test (cargo install + every command)
+        run: ./scripts/smoke_test.sh
+      - name: Hardware report
+        run: |
+          cargo run --release --locked -- sysinfo
+          cargo run --release --locked -- bench memory --size-mb 1024
+          cargo run --release --locked -- bench kernels
+
+  reference-transformers:
+    name: cross-check vs transformers (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyTorch + transformers
+        run: pip install --quiet torch "transformers>=4.51" numpy
+      - run: cargo build --release --locked
+      - name: Tiny fixtures match transformers
+        run: |
+          for m in tiny-qwen3-moe tiny-mixtral; do
+            python scripts/reference/compare_with_transformers.py tests/fixtures/$m \
+              --hale target/release/hale --tokens 1,17,42,99,5,200,7,64,128,3
+          done
+
+  real-moe:
+    name: real MoE model on Apple Silicon
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyTorch + transformers
+        run: pip install --quiet torch "transformers>=4.51" numpy huggingface_hub
+      - run: cargo build --release --locked
+      - name: Verify on a real Mixtral-architecture MoE
+        run: ./scripts/verify_real_model.sh Isotonic/TinyMixtral-4x248M-MoE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-moe-report
+          path: target/real-model-report
