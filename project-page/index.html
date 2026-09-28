@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hale-Token</title>
+<meta name="description" content="A Rust engine that tiers MoE experts across unified memory and SSD so frontier MoE models run on a Mac.">
+<meta property="og:title" content="Hale-Token: Data-Center-Scale MoE LLMs on Apple Silicon">
+<meta property="og:description" content="A Rust engine that tiers MoE experts across unified memory and SSD so frontier MoE models run on a Mac.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fbfaf7;--fg:#1d1d1f;--muted:#5b5b63;--card:#ffffff;--line:#e4e2dc;--accent:#2f5bd3;--accent-soft:#e8eefc;--code:#f3f2ee;--chip:#efeee9}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111214;--fg:#ececee;--muted:#a0a0aa;--card:#1a1b1f;--line:#2c2d33;--accent:#8aa8ff;--accent-soft:#1e2640;--code:#1f2025;--chip:#24252b}}
+:root[data-theme="dark"]{--bg:#111214;--fg:#ececee;--muted:#a0a0aa;--card:#1a1b1f;--line:#2c2d33;--accent:#8aa8ff;--accent-soft:#1e2640;--code:#1f2025;--chip:#24252b}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.65 "Source Serif 4",Georgia,serif}
+.wrap{max-width:920px;margin:0 auto;padding:0 16px}
+header.hero{padding:64px 0 28px;text-align:center}
+.kicker{font:600 13px/1 Inter,system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+h1{font:700 clamp(30px,5.4vw,48px)/1.15 Inter,system-ui,sans-serif;margin:14px 0 10px;letter-spacing:-.02em}
+.subtitle{font-size:clamp(17px,2.4vw,21px);color:var(--muted);max-width:720px;margin:0 auto}
+.authors{margin:20px 0 4px;font:500 16px Inter,system-ui,sans-serif}
+.affil{color:var(--muted);font:14px Inter,system-ui,sans-serif}
+.buttons{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:26px 0 8px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;background:var(--fg);color:var(--bg);text-decoration:none;font:600 14px Inter,system-ui,sans-serif}
+.btn.alt{background:transparent;color:var(--fg);border:1px solid var(--line)}
+.btn:hover{opacity:.88}
+section{padding:26px 0;border-top:1px solid var(--line)}
+h2{font:700 24px/1.3 Inter,system-ui,sans-serif;margin:0 0 14px;letter-spacing:-.01em}
+h3{font:650 17px/1.35 Inter,system-ui,sans-serif;margin:0 0 6px}
+p{margin:0 0 12px}
+.tldr{background:var(--accent-soft);border-radius:14px;padding:18px 20px;font-size:18px}
+.tldr b{font-family:Inter,system-ui,sans-serif}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.card p{font-size:15.5px;color:var(--muted);margin:0}
+figure{margin:0 0 18px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;overflow-x:auto}
+figcaption{font:14px/1.5 Inter,system-ui,sans-serif;color:var(--muted);margin-top:10px}
+.mermaid{display:flex;justify-content:center;min-width:0}
+.mermaid svg{max-width:100%;height:auto}
+pre{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:14px 16px;overflow-x:auto;font:13.5px/1.55 "JetBrains Mono",ui-monospace,monospace;margin:0 0 12px}
+code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.9em}
+table{width:100%;border-collapse:collapse;font:15px/1.5 Inter,system-ui,sans-serif}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+td code{background:var(--chip);padding:1px 6px;border-radius:6px}
+.tablewrap{overflow-x:auto}
+.note{font:14px/1.55 Inter,system-ui,sans-serif;color:var(--muted)}
+footer{padding:32px 0 48px;color:var(--muted);font:14px Inter,system-ui,sans-serif;text-align:center;border-top:1px solid var(--line)}
+a{color:var(--accent)}
+.theme{position:fixed;top:12px;right:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:999px;padding:6px 12px;font:13px Inter,system-ui,sans-serif;cursor:pointer}
+</style>
+</head>
+<body>
+<button class="theme" id="theme" aria-label="Toggle dark mode">Theme</button>
+<div class="wrap">
+<header class="hero">
+  <div class="kicker">Inference · Rust · Apple Silicon</div>
+  <h1>Hale-Token: Data-Center-Scale MoE LLMs on Apple Silicon</h1>
+  <p class="subtitle">A Rust inference engine for M1–M5 Macs. Hot experts stay pinned in unified memory, recent ones live in an LRU, and the rest stream from the SSD in a page-aligned pack, sized by a bandwidth-aware planner.</p>
+  <div class="authors">B A NaveenKumar</div>
+  <div class="affil">Independent research · 2026</div>
+  <div class="buttons"><a class="btn" href="paper.pdf">Paper (PDF)</a><a class="btn alt" href="https://github.com/basaanithanaveenkumar/Hale-Token">Code</a><a class="btn alt" href="https://github.com/basaanithanaveenkumar/Hale-Token/tree/claude/modest-cerf-mc599d/docs">Docs</a><a class="btn alt" href="https://github.com/basaanithanaveenkumar/Hale-Token/blob/claude/modest-cerf-mc599d/docs/blog/2026-09-28-moe-on-a-mac.md">Blog</a></div>
+</header>
+<section><div class="tldr"><b>TL;DR.</b> Qwen3-235B-A22B touches 22B of its 235B parameters per token, so load only those. Tiered expert cache + 16 KiB-aligned SSD pack + q4_0 kernels + a planner that predicts tok/s for any Mac. Logits match <code>transformers</code> (rel. RMS 1.2e-6), and SSD streaming is bit-identical to RAM.</div></section>
+<section><h2>Abstract</h2><p>Frontier open-weight language models are sparse mixtures of experts, yet standard inference loads every weight, putting them out of reach of laptops. Hale-Token treats a Mac as a three-tier memory system: pinned hot experts and a byte-budgeted O(1) LRU in unified memory, and every expert on the internal NVMe SSD in a page-aligned, fixed-stride pack read with parallel uncached pread.</p><p>A closed-form cost model built from the chip's memory bandwidth, core counts, SSD throughput and RAM sizes the tiers and predicts decode speed before download. Routing statistics saved across runs choose what to pin. On a real Mixtral-architecture MoE, logits match Hugging Face transformers with 100% top-1 agreement. On a shared M1 CI VM, decoding runs at 26–34 tok/s resident and 10.3–11.5 tok/s with only 25% of experts cached. The same measurements exposed a pure-LRU thrashing pathology that the planner now avoids.</p></section>
+<section><h2>Highlights</h2><div class="grid"><div class="card"><h3>Three-tier expert cache</h3><p>Pinned (from <code>hale-routing.json</code>) → O(1) byte-budgeted LRU → SSD. All misses are read concurrently, outside locks.</p></div><div class="card"><h3>SSD-optimised pack</h3><p>16 KiB-aligned fixed-stride records with gate|up|down contiguous: O(1) addressing, one <code>pread</code> per miss, and <code>F_NOCACHE</code>.</p></div><div class="card"><h3>Planner</h3><p><code>hale plan</code> predicts tok/s for any model on any M1–M5 Mac from bandwidth, cores, RAM and SSD speed.</p></div><div class="card"><h3>Quantized kernels</h3><p><code>q8_0</code> / <code>q4_0</code> experts with 8-bit activations and integer dot products (NEON <code>sdot</code>).</p></div><div class="card"><h3>Real models</h3><p>Qwen3-MoE (30B-A3B, 235B-A22B) and Mixtral (8x7B, 8x22B) straight from HF safetensors via zero-copy mmap.</p></div><div class="card"><h3>Verified</h3><p>Float64 litmus tests at every position, bit-identical SSD vs RAM, and a <code>transformers</code> cross-check on a real MoE. CI runs on arm64 macOS.</p></div></div></section>
+<section><h2>Architecture</h2><figure><div class="mermaid">flowchart TB
+  subgraph UM[&quot;Unified memory (CPU + GPU share it; 68–819 GB/s)&quot;]
+    T0[&quot;Tier 0: pinned&lt;br/&gt;hottest experts from hale-routing.json&lt;br/&gt;loaded in parallel at start-up · never evicted&quot;]
+    T1[&quot;Tier 1: LRU&lt;br/&gt;recently used experts · byte-budgeted · O(1)&quot;]
+  end
+  subgraph SSD[&quot;Internal NVMe (≈3–7 GB/s)&quot;]
+    T2[&quot;Tier 2: experts.hpk&lt;br/&gt;every expert · 16 KiB-aligned fixed-stride records&quot;]
+  end
+  REQ[&quot;MoE layer asks for top-k experts&quot;] --&gt; T0
+  T0 --&gt;|miss| T1
+  T1 --&gt;|miss| T2
+  T2 --&gt;|&quot;parallel pread, F_NOCACHE&quot;| T1</div><figcaption><b>Figure 1.</b> Three memory tiers.</figcaption></figure><figure><div class="mermaid">sequenceDiagram
+  participant MoE as MoeLayer
+  participant C as ExpertCache
+  participant S as RoutingStats
+  participant P as Pinned tier
+  participant L as LRU tier
+  participant D as PackExpertSource (SSD)
+  MoE-&gt;&gt;C: fetch([k experts])
+  C-&gt;&gt;S: record routing decision
+  C-&gt;&gt;P: lookup (lock 1)
+  C-&gt;&gt;L: lookup misses
+  par all misses concurrently, outside locks
+    C-&gt;&gt;D: pread record e1
+    C-&gt;&gt;D: pread record e2
+  end
+  D--&gt;&gt;C: gate / up / down (quantized)
+  C-&gt;&gt;L: insert, evict LRU by bytes (lock 2)
+  C--&gt;&gt;MoE: Arc&lt;Expert&gt; × k</div><figcaption><b>Figure 2.</b> <code>ExpertCache::fetch</code>: lookups under short locks and concurrent SSD reads outside them.</figcaption></figure><figure><div class="mermaid">flowchart TB
+  IN[&quot;model shape · chip (bandwidth, cores) · RAM · SSD GB/s · dtypes&quot;] --&gt; B[&quot;ram_budget = 0.75 · RAM&lt;br/&gt;expert_ram = budget − dense − 2 GB&quot;]
+  B --&gt; H[&quot;in_ram = expert_ram / expert_bytes&lt;br/&gt;hit ≥ in_ram / total (uniform floor)&quot;]
+  H --&gt; T[&quot;t_token = max(t_mem, t_compute) + t_ssd&quot;]
+  B --&gt; P{&quot;placement&quot;}
+  P --&gt;|&quot;all experts fit&quot;| PA[&quot;pin everything&quot;]
+  P --&gt;|&quot;budget &lt; 2 × layers × k&quot;| PB[&quot;pin all slots, no LRU&lt;br/&gt;(cyclic access defeats a small LRU)&quot;]
+  P --&gt;|otherwise| PC[&quot;half pinned, half LRU&quot;]</div><figcaption><b>Figure 3.</b> Planner: cost model and placement policy.</figcaption></figure><figure><div class="mermaid">flowchart LR
+  TOK[&quot;token&quot;] --&gt; EMB[&quot;embedding row&quot;]
+  EMB --&gt; L{&quot;× N decoder layers&quot;}
+  L --&gt; A[&quot;RMSNorm → GQA attention&lt;br/&gt;QK-norm · RoPE · KV cache&quot;]
+  A --&gt; M[&quot;RMSNorm → MoE&quot;]
+  M --&gt; R[&quot;router → softmax → heap top-k&quot;]
+  R --&gt; F[&quot;ExpertProvider::fetch(keys)&quot;]
+  F --&gt; E[&quot;Σ wᵢ · SwiGLU expertᵢ(x)&quot;]
+  E --&gt; L
+  L --&gt; O[&quot;final RMSNorm → lm_head → logits → sampler&quot;]</div><figcaption><b>Figure 4.</b> One token, end to end.</figcaption></figure></section>
+<section><h2>Measured (GitHub macos-14 runner, Apple M1 VM, TinyMixtral-4x248M-MoE)</h2><div class="tablewrap"><table><thead><tr><th>Check</th><th>Result</th></tr></thead><tbody><tr><td><code>hale logits</code> vs <code>transformers</code> (bf16)</td><td>rel. RMS error 1.2e-6, top-1 agreement 100%</td></tr><tr><td>… (q8_0 expert pack)</td><td>rel. RMS error 0.42%, top-1 agreement 100%</td></tr><tr><td>Greedy output</td><td>“Paris. France is the capital of France. …”</td></tr><tr><td>Decode, experts resident (q8_0)</td><td>26–34 tok/s</td></tr><tr><td>Decode, SSD-streamed, 25% cached</td><td>10.3–11.5 tok/s, hit rate 18%, SSD 4.2–5.3 GB/s</td></tr><tr><td>Pure LRU at 25% (old policy)</td><td>0% hits, 11.9 GB read per 32 tokens → pinning: 18%, 9.7 GB</td></tr></tbody></table></div></section>
+<section><h2>What can my Mac run? (planner estimates)</h2><div class="tablewrap"><table><thead><tr><th>Model</th><th>Total / active</th><th>M2 Pro 32GB</th><th>M4 Pro 64GB</th><th>M4 Max 128GB</th><th>M3 Ultra 512GB</th></tr></thead><tbody>
+<tr><td>Qwen3-30B-A3B</td><td>30.5B / 3.3B</td><td>29.4 RAM</td><td>39.5 RAM</td><td>46.7 RAM</td><td>93.4 RAM</td></tr>
+<tr><td>Mixtral-8x7B</td><td>46.7B / 12.9B</td><td>2.2 SSD</td><td>10.3 RAM</td><td>12.1 RAM</td><td>24.2 RAM</td></tr>
+<tr><td>Qwen3-235B-A22B</td><td>235B / 22B</td><td>0.6 SSD</td><td>0.7 SSD</td><td>1.3 SSD</td><td>14.1 RAM</td></tr>
+<tr><td>DeepSeek-V3*</td><td>671B / 37.5B</td><td>–</td><td>0.4 SSD</td><td>0.5 SSD</td><td>4.1 SSD</td></tr>
+</tbody></table></div>
+<p class="note">Estimated decode tok/s, q4_0 experts, from <code>hale plan --compare</code>. SSD figures are floors that assume uniform routing. *Plannable, not yet executable (MLA). CI VMs measure only 7–10 GB/s of memory bandwidth versus 68 GB/s on a physical M1, so measured speeds are lower bounds.</p></section>
+<section><h2>Quick start</h2><pre><code>cargo install --git https://github.com/basaanithanaveenkumar/Hale-Token
+hale sysinfo
+hale plan --preset qwen3-235b
+huggingface-cli download Qwen/Qwen3-30B-A3B --local-dir models/Qwen3-30B-A3B
+hale convert models/Qwen3-30B-A3B models/Qwen3-30B-A3B-q4 --expert-dtype q4_0
+hale run models/Qwen3-30B-A3B-q4 -p &quot;Explain mixture-of-experts in two sentences.&quot;</code></pre></section>
+<section><h2>Citation</h2><pre><code>@misc{naveenkumar2026haletoken,
+  title  = {Hale-Token: Running Data-Center-Scale Mixture-of-Experts LLMs on Apple
+            Silicon by Tiering Experts across Unified Memory and SSD},
+  author = {NaveenKumar, B A},
+  year   = {2026},
+  url    = {https://github.com/basaanithanaveenkumar/Hale-Token}
+}</code></pre></section>
+</div>
+<footer>Hale-Token · <a href="https://github.com/basaanithanaveenkumar/Hale-Token">Source on GitHub</a> · Apache License 2.0</footer>
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+const root = document.documentElement;
+const saved = (() => { try { return localStorage.getItem('theme'); } catch (e) { return null; } })();
+if (saved) root.dataset.theme = saved;
+const isDark = () => root.dataset.theme ? root.dataset.theme === 'dark'
+  : matchMedia('(prefers-color-scheme: dark)').matches;
+const sources = [...document.querySelectorAll('.mermaid')].map(el => el.textContent);
+async function render() {
+  mermaid.initialize({ startOnLoad: false, theme: isDark() ? 'dark' : 'neutral', securityLevel: 'strict',
+    flowchart: { curve: 'basis', htmlLabels: true } });
+  const els = document.querySelectorAll('.mermaid');
+  els.forEach((el, i) => { el.removeAttribute('data-processed'); el.textContent = sources[i]; });
+  await mermaid.run({ nodes: els });
+}
+document.getElementById('theme').addEventListener('click', () => {
+  root.dataset.theme = isDark() ? 'light' : 'dark';
+  try { localStorage.setItem('theme', root.dataset.theme); } catch (e) {}
+  render();
+});
+render();
+</script>
+</body>
+</html>
