@@ -206,6 +206,13 @@ See [docs/testing.md](docs/testing.md).
 | [Testing](docs/testing.md) | Unit, litmus, smoke and real-model verification |
 | [Rust primer](docs/rust-primer.md) | Rust concepts used in this codebase, for beginners |
 | [Roadmap](docs/roadmap.md) | Metal backend, batched prefill, more architectures |
+| [Diagrams](docs/diagrams.md) | Mermaid diagrams: tiers, token flow, cache lookup, planner, conversion, modules |
+| [Blog](docs/blog/README.md) | *A 235B-parameter model on a laptop* |
+| [Paper](paper/main.tex) | arXiv-ready write-up (`make -C paper`) |
+| [Project page](https://basaanithanaveenkumar.github.io/Hale-Token/) | GitHub Pages site ([source](project-page/index.html)) |
+
+Claude Code skills live in [`.claude/skills/`](.claude/skills): `hale-token-dev`,
+`hale-token-add-model`, `hale-token-perf`, `hale-publish`.
 
 API docs: `cargo doc --open`.
 
