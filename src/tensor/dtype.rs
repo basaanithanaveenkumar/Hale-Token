@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 
 /// Storage format of a weight matrix row.
 ///
@@ -52,7 +52,7 @@ impl DType {
     /// the block size.
     pub fn row_bytes(self, cols: usize) -> Result<usize> {
         if cols % self.block_len() != 0 {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "{self:?} needs row length divisible by {}, got {cols}",
                 self.block_len()
             )));
@@ -93,7 +93,7 @@ impl DType {
             "bf16" => Ok(DType::BF16),
             "q8_0" | "q8" => Ok(DType::Q8_0),
             "q4_0" | "q4" => Ok(DType::Q4_0),
-            other => Err(HaleError::InvalidArgument(format!(
+            other => Err(HaleTokenError::InvalidArgument(format!(
                 "unknown dtype `{other}` (expected f32, f16, bf16, q8_0 or q4_0)"
             ))),
         }

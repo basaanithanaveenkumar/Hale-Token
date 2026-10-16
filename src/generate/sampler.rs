@@ -119,7 +119,9 @@ impl Sampler for TopPSampler {
                 return *index as u32;
             }
         }
-        candidates.last().expect("at least one candidate").0 as u32
+        // Rounding can leave `r` a hair above zero after the last subtraction; the last kept
+        // candidate is then the right pick. `candidates` is never empty for a non-empty vocab.
+        candidates.last().map_or(0, |c| c.0 as u32)
     }
 }
 

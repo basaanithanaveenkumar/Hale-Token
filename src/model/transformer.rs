@@ -5,7 +5,7 @@ use std::sync::Arc;
 use super::arch::{naming_for, AttnTensor, MlpProj};
 use super::{Attention, KvCache, MoeLayer};
 use crate::config::ModelConfig;
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 use crate::expert::{Expert, ExpertProvider};
 use crate::loader::TensorSource;
 use crate::ops::{rms_norm, Rope};
@@ -169,13 +169,13 @@ impl Transformer {
         let c = &self.config;
         let position = cache.len();
         if position >= cache.max_len() {
-            return Err(HaleError::ContextOverflow {
+            return Err(HaleTokenError::ContextOverflow {
                 needed: position + 1,
                 max: cache.max_len(),
             });
         }
         if token as usize >= c.vocab_size {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "token id {token} >= vocab size {}",
                 c.vocab_size
             )));
@@ -231,7 +231,7 @@ impl Transformer {
     pub fn prefill(&self, tokens: &[u32], cache: &mut KvCache) -> Result<Vec<f32>> {
         let (last, rest) = tokens
             .split_last()
-            .ok_or_else(|| HaleError::InvalidArgument("empty prompt".into()))?;
+            .ok_or_else(|| HaleTokenError::InvalidArgument("empty prompt".into()))?;
         for &t in rest {
             self.forward_hidden(t, cache)?;
         }
@@ -245,7 +245,7 @@ fn add_in_place(x: &mut [f32], delta: &[f32]) {
 
 fn check_shape(name: &str, m: &WeightMatrix, rows: usize, cols: usize) -> Result<()> {
     if (m.rows(), m.cols()) != (rows, cols) {
-        return Err(HaleError::bad_tensor(
+        return Err(HaleTokenError::bad_tensor(
             name,
             format!(
                 "expected shape [{rows}, {cols}], got [{}, {}]",

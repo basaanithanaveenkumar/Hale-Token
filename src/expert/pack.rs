@@ -38,7 +38,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{Expert, ExpertKey, ExpertSource};
 use crate::config::ModelConfig;
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
+use crate::loader::read_u64_le;
 use crate::tensor::{ByteBuf, DType, WeightMatrix};
 
 /// File name of the pack inside a converted model directory.
@@ -87,12 +88,12 @@ impl PackHeader {
             data_offset: 0,
         };
         // +32 bytes of slack: writing the real data_offset adds a few digits.
-        header.data_offset = round_up(16 + header.to_json().len() + 32, ALIGN);
+        header.data_offset = round_up(16 + header.to_json()?.len() + 32, ALIGN);
         Ok(header)
     }
 
-    fn to_json(&self) -> Vec<u8> {
-        serde_json::to_vec(self).expect("header serialises")
+    fn to_json(&self) -> Result<Vec<u8>> {
+        serde_json::to_vec(self).map_err(|e| HaleTokenError::serialization("expert pack header", e))
     }
 
     /// Total file size.
@@ -107,13 +108,13 @@ impl PackHeader {
             .iter()
             .position(|&l| l == key.layer as usize)
             .ok_or_else(|| {
-                HaleError::InvalidArgument(format!(
+                HaleTokenError::InvalidArgument(format!(
                     "layer {} has no experts in the pack",
                     key.layer
                 ))
             })?;
         if key.expert as usize >= self.num_experts {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "expert {key} out of range"
             )));
         }
@@ -148,9 +149,9 @@ pub struct PackWriter {
 impl PackWriter {
     /// Creates `path` and writes the header.
     pub fn create(path: &Path, header: PackHeader) -> Result<Self> {
-        let io = |e| HaleError::io(path, e);
+        let io = |e| HaleTokenError::io(path, e);
         let mut file = File::create(path).map_err(io)?;
-        let json = header.to_json();
+        let json = header.to_json()?;
         file.write_all(MAGIC).map_err(io)?;
         file.write_all(&(json.len() as u64).to_le_bytes())
             .map_err(io)?;
@@ -176,7 +177,7 @@ impl PackWriter {
             record.extend_from_slice(converted.bytes().as_bytes());
         }
         if record.len() != self.header.record_bytes {
-            return Err(HaleError::bad_tensor(
+            return Err(HaleTokenError::bad_tensor(
                 key.to_string(),
                 format!(
                     "record is {} bytes, expected {}",
@@ -188,14 +189,14 @@ impl PackWriter {
         let offset = self.header.offset_of(key)?;
         self.file
             .write_all_at(&record, offset)
-            .map_err(|e| HaleError::io(&self.path, e))
+            .map_err(|e| HaleTokenError::io(&self.path, e))
     }
 
     /// Flushes the file to disk.
     pub fn finish(self) -> Result<()> {
         self.file
             .sync_all()
-            .map_err(|e| HaleError::io(&self.path, e))
+            .map_err(|e| HaleTokenError::io(&self.path, e))
     }
 }
 
@@ -209,31 +210,32 @@ pub struct PackExpertSource {
 impl PackExpertSource {
     /// Opens a pack and validates its header.
     pub fn open(path: &Path) -> Result<Self> {
-        let io = |e| HaleError::io(path, e);
+        let io = |e| HaleTokenError::io(path, e);
         let mut file = File::open(path).map_err(io)?;
         let mut prefix = [0u8; 16];
         file.read_exact(&mut prefix).map_err(io)?;
         if &prefix[..8] != MAGIC {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "{} is not a Hale expert pack",
                 path.display()
             )));
         }
-        let json_len = u64::from_le_bytes(prefix[8..].try_into().expect("8 bytes")) as usize;
+        let json_len = read_u64_le(&prefix[8..]) as usize;
         if json_len > ALIGN * 64 {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "{}: header too large",
                 path.display()
             )));
         }
         let mut json = vec![0u8; json_len];
         file.read_exact(&mut json).map_err(io)?;
-        let header: PackHeader = serde_json::from_slice(&json).map_err(|e| HaleError::Json {
-            path: path.to_path_buf(),
-            source: e,
-        })?;
+        let header: PackHeader =
+            serde_json::from_slice(&json).map_err(|e| HaleTokenError::Json {
+                path: path.to_path_buf(),
+                source: e,
+            })?;
         if header.version != FORMAT_VERSION {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "{}: pack version {} is not supported (expected {FORMAT_VERSION})",
                 path.display(),
                 header.version
@@ -241,7 +243,7 @@ impl PackExpertSource {
         }
         let actual = file.metadata().map_err(io)?.len() as usize;
         if actual < header.file_size() {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "{}: truncated pack ({actual} bytes, expected {})",
                 path.display(),
                 header.file_size()
@@ -266,7 +268,7 @@ impl ExpertSource for PackExpertSource {
         let mut record = vec![0u8; self.header.record_bytes];
         self.file
             .read_exact_at(&mut record, offset)
-            .map_err(|e| HaleError::io(&self.path, e))?;
+            .map_err(|e| HaleTokenError::io(&self.path, e))?;
         self.header.decode_record(ByteBuf::owned(record))
     }
 

@@ -1,14 +1,14 @@
 //! The tiered expert cache: pinned RAM -> LRU RAM -> SSD.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
 use rayon::prelude::*;
 use serde::Serialize;
 
 use super::{Expert, ExpertKey, ExpertProvider, ExpertSource, LruCache, RoutingStats};
-use crate::error::Result;
+use crate::error::{HaleTokenError, Result};
 
 /// Counters describing how well the cache is doing.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
@@ -123,7 +123,7 @@ impl ExpertCache {
 impl ExpertProvider for ExpertCache {
     fn fetch(&self, keys: &[ExpertKey]) -> Result<Vec<Arc<Expert>>> {
         {
-            let mut routing = self.routing.lock().expect("routing lock");
+            let mut routing = lock(&self.routing);
             keys.iter().for_each(|k| routing.record(*k));
         }
 
@@ -131,7 +131,7 @@ impl ExpertProvider for ExpertCache {
         let mut found: Vec<Option<Arc<Expert>>> = Vec::with_capacity(keys.len());
         let (mut pinned_hits, mut lru_hits) = (0, 0);
         {
-            let mut lru = self.lru.lock().expect("lru lock");
+            let mut lru = lock(&self.lru);
             for key in keys {
                 if let Some(e) = self.pinned.get(key) {
                     pinned_hits += 1;
@@ -164,23 +164,27 @@ impl ExpertProvider for ExpertCache {
         let load_seconds = started.elapsed().as_secs_f64();
 
         let mut loaded_iter = loaded.into_iter();
-        let mut lru = self.lru.lock().expect("lru lock");
-        let result: Vec<Arc<Expert>> = found
-            .into_iter()
-            .zip(keys)
-            .map(|(slot, key)| match slot {
+        let mut lru = lock(&self.lru);
+        let mut result: Vec<Arc<Expert>> = Vec::with_capacity(keys.len());
+        for (slot, key) in found.into_iter().zip(keys) {
+            let expert = match slot {
                 Some(e) => e,
                 None => {
-                    let e = loaded_iter.next().expect("one load per miss");
+                    // Pass 2 loaded exactly one expert per `None` slot, in order.
+                    let e = loaded_iter.next().ok_or_else(|| {
+                        HaleTokenError::Internal(format!("no loaded expert for cache miss {key:?}"))
+                    })?;
                     if !self.passthrough {
                         lru.insert(*key, Arc::clone(&e), e.size_bytes());
+                        tracing::trace!(?key, bytes = e.size_bytes(), "expert cached in LRU tier");
                     }
                     e
                 }
-            })
-            .collect();
+            };
+            result.push(expert);
+        }
 
-        let mut stats = self.stats.lock().expect("stats lock");
+        let mut stats = lock(&self.stats);
         stats.pinned_hits += pinned_hits;
         stats.lru_hits += lru_hits;
         stats.misses += missing.len() as u64;
@@ -194,12 +198,20 @@ impl ExpertProvider for ExpertCache {
     }
 
     fn stats(&self) -> CacheStats {
-        self.stats.lock().expect("stats lock").clone()
+        lock(&self.stats).clone()
     }
 
     fn routing_stats(&self) -> RoutingStats {
-        self.routing.lock().expect("routing lock").clone()
+        lock(&self.routing).clone()
     }
+}
+
+/// Locks `mutex`, recovering the data if another thread panicked while holding it.
+///
+/// The guarded values (LRU index, counters) stay structurally valid even if an update was
+/// interrupted, so one panicking request must not take every later request down with it.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 #[cfg(test)]

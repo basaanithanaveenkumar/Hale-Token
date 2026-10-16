@@ -121,12 +121,14 @@ pub fn execute(args: RunArgs) -> hale::Result<()> {
         s.cache.load_gbps()
     );
     if args.json_stats {
-        println!("{}", serde_json::to_string(s).expect("stats serialise"));
+        let json = serde_json::to_string(s)
+            .map_err(|e| hale::HaleTokenError::serialization("generation stats", e))?;
+        println!("{json}");
     }
     if !args.no_save_stats {
         match engine.save_routing_stats() {
             Ok(path) => eprintln!("[hale] routing statistics saved to {}", path.display()),
-            Err(e) => eprintln!("[hale] could not save routing statistics: {e}"),
+            Err(err) => tracing::warn!(%err, "could not save routing statistics"),
         }
     }
     Ok(())

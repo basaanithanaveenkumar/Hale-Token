@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use rayon::prelude::*;
 
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 use crate::tensor::{DType, WeightMatrix};
 
 /// Measures achievable read bandwidth of unified memory in GB/s by summing a
@@ -32,11 +32,14 @@ pub fn memory_bandwidth(size_bytes: usize, passes: usize) -> f64 {
 /// Measures random-ish read throughput of `path` in GB/s using `threads`
 /// parallel positioned reads of `chunk_bytes` each (like expert loads).
 pub fn ssd_read_bandwidth(path: &Path, chunk_bytes: usize, threads: usize) -> Result<f64> {
-    let file = File::open(path).map_err(|e| HaleError::io(path, e))?;
+    let file = File::open(path).map_err(|e| HaleTokenError::io(path, e))?;
     disable_cache(&file);
-    let len = file.metadata().map_err(|e| HaleError::io(path, e))?.len() as usize;
+    let len = file
+        .metadata()
+        .map_err(|e| HaleTokenError::io(path, e))?
+        .len() as usize;
     if len < chunk_bytes {
-        return Err(HaleError::InvalidArgument(format!(
+        return Err(HaleTokenError::InvalidArgument(format!(
             "{} is smaller than one {chunk_bytes}-byte chunk",
             path.display()
         )));
@@ -47,7 +50,7 @@ pub fn ssd_read_bandwidth(path: &Path, chunk_bytes: usize, threads: usize) -> Re
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(threads.max(1))
         .build()
-        .map_err(|e| HaleError::InvalidArgument(e.to_string()))?;
+        .map_err(|e| HaleTokenError::InvalidArgument(e.to_string()))?;
     let start = Instant::now();
     let bytes: usize = pool
         .install(|| {
@@ -63,7 +66,7 @@ pub fn ssd_read_bandwidth(path: &Path, chunk_bytes: usize, threads: usize) -> Re
                 .collect::<std::io::Result<Vec<usize>>>()
                 .map(|v| v.into_iter().sum())
         })
-        .map_err(|e| HaleError::io(path, e))?;
+        .map_err(|e| HaleTokenError::io(path, e))?;
     Ok(bytes as f64 / start.elapsed().as_secs_f64() / 1e9)
 }
 

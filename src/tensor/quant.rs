@@ -92,6 +92,9 @@ impl Q8Activations {
         Q8Activations { scales, quants }
     }
 
+    // Hot path: the slice is exactly `QK` long by construction (`quantize` asserts the input is
+    // a multiple of `QK`), so the conversion cannot fail; the `expect`s below document the
+    // fixed block layout and keep the arrays sized for LLVM's vectoriser.
     fn block(&self, b: usize) -> (f32, &[i8; QK]) {
         let q = self.quants[b * QK..(b + 1) * QK]
             .try_into()

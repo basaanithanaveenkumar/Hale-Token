@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use crate::config::Architecture;
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 
 /// A loaded tokenizer.
 pub struct Tokenizer {
@@ -18,7 +18,7 @@ impl Tokenizer {
     pub fn from_dir(dir: &Path) -> Result<Self> {
         let path = dir.join("tokenizer.json");
         let inner = tokenizers::Tokenizer::from_file(&path)
-            .map_err(|e| HaleError::Tokenizer(format!("{}: {e}", path.display())))?;
+            .map_err(|e| HaleTokenError::Tokenizer(format!("{}: {e}", path.display())))?;
         Ok(Tokenizer { inner })
     }
 
@@ -28,14 +28,14 @@ impl Tokenizer {
         self.inner
             .encode(text, add_special_tokens)
             .map(|e| e.get_ids().to_vec())
-            .map_err(|e| HaleError::Tokenizer(e.to_string()))
+            .map_err(|e| HaleTokenError::Tokenizer(e.to_string()))
     }
 
     /// Ids to text (special tokens are dropped).
     pub fn decode(&self, ids: &[u32]) -> Result<String> {
         self.inner
             .decode(ids, true)
-            .map_err(|e| HaleError::Tokenizer(e.to_string()))
+            .map_err(|e| HaleTokenError::Tokenizer(e.to_string()))
     }
 
     /// Id of a literal token such as `"<|im_end|>"`.

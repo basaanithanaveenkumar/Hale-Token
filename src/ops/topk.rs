@@ -51,7 +51,7 @@ pub fn top_k(scores: &[f32], k: usize) -> Vec<Scored> {
         let candidate = Worst(Scored { index, score });
         if heap.len() < k {
             heap.push(candidate);
-        } else if candidate < *heap.peek().expect("heap holds k items") {
+        } else if heap.peek().is_some_and(|worst| candidate < *worst) {
             heap.pop();
             heap.push(candidate);
         }

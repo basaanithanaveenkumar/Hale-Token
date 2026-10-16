@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use clap::Args;
 use hale::engine::{Engine, EngineOptions};
-use hale::HaleError;
+use hale::HaleTokenError;
 
 #[derive(Args)]
 pub struct LogitsArgs {
@@ -31,14 +31,14 @@ pub fn execute(args: LogitsArgs) -> hale::Result<()> {
     let tokens: Vec<u32> = match &args.text {
         Some(text) => engine
             .tokenizer()
-            .ok_or_else(|| HaleError::Tokenizer("no tokenizer.json".into()))?
+            .ok_or_else(|| HaleTokenError::Tokenizer("no tokenizer.json".into()))?
             .encode(text, true)?,
         None => args
             .tokens
             .split(',')
             .map(|t| t.trim().parse::<u32>())
             .collect::<Result<_, _>>()
-            .map_err(|e| HaleError::InvalidArgument(format!("--tokens: {e}")))?,
+            .map_err(|e| HaleTokenError::InvalidArgument(format!("--tokens: {e}")))?,
     };
     let model = engine.model();
     let mut cache = model.new_cache(tokens.len());

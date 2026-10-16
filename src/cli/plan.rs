@@ -6,7 +6,7 @@ use clap::Args;
 use hale::expert::planner::{self, HardwareProfile, ModelShape, PlanRequest};
 use hale::hardware::{lookup_chip, APPLE_CHIPS};
 use hale::tensor::DType;
-use hale::{HaleError, ModelConfig};
+use hale::{HaleTokenError, ModelConfig};
 
 use super::format;
 
@@ -39,8 +39,7 @@ pub struct PlanArgs {
 pub fn execute(args: PlanArgs) -> hale::Result<()> {
     let expert_dtype = DType::parse(&args.expert_dtype)?;
     if args.compare {
-        print_comparison(expert_dtype);
-        return Ok(());
+        return print_comparison(expert_dtype);
     }
 
     let model = match (&args.model, &args.preset) {
@@ -48,9 +47,9 @@ pub fn execute(args: PlanArgs) -> hale::Result<()> {
             ModelShape::from_config(&dir.display().to_string(), &ModelConfig::from_dir(dir)?)
         }
         (None, Some(name)) => ModelShape::preset(name)
-            .ok_or_else(|| HaleError::InvalidArgument(format!("unknown preset `{name}`")))?,
+            .ok_or_else(|| HaleTokenError::InvalidArgument(format!("unknown preset `{name}`")))?,
         (None, None) => {
-            return Err(HaleError::InvalidArgument(
+            return Err(HaleTokenError::InvalidArgument(
                 "pass --model, --preset or --compare".into(),
             ))
         }
@@ -59,7 +58,7 @@ pub fn execute(args: PlanArgs) -> hale::Result<()> {
     let sys = hale::hardware::detect();
     let chip = match &args.chip {
         Some(name) => lookup_chip(name)
-            .ok_or_else(|| HaleError::InvalidArgument(format!("unknown chip `{name}`")))?,
+            .ok_or_else(|| HaleTokenError::InvalidArgument(format!("unknown chip `{name}`")))?,
         None => sys.chip.unwrap_or(&APPLE_CHIPS[0]),
     };
     let ram_gb = args.ram_gb.unwrap_or_else(|| {
@@ -137,7 +136,7 @@ pub fn execute(args: PlanArgs) -> hale::Result<()> {
 }
 
 /// Estimated decode speed of each preset on representative Macs.
-fn print_comparison(expert_dtype: DType) {
+fn print_comparison(expert_dtype: DType) -> hale::Result<()> {
     let macs = [
         ("M1", 16.0),
         ("M2 Pro", 32.0),
@@ -161,7 +160,12 @@ fn print_comparison(expert_dtype: DType) {
             format::params(model.active_params())
         );
         for (chip, ram) in macs {
-            let hw = HardwareProfile::from_chip(lookup_chip(chip).expect("known chip"), ram);
+            let spec = lookup_chip(chip).ok_or_else(|| {
+                HaleTokenError::Internal(format!(
+                    "comparison chip {chip:?} missing from the chip table"
+                ))
+            })?;
+            let hw = HardwareProfile::from_chip(spec, ram);
             let p = planner::plan(&PlanRequest {
                 model: model.clone(),
                 hardware: hw,
@@ -182,4 +186,5 @@ fn print_comparison(expert_dtype: DType) {
         println!();
     }
     println!("\nestimated decode tokens/s, experts as {expert_dtype}; RAM = fully resident, SSD = streamed, - = does not fit");
+    Ok(())
 }

@@ -9,14 +9,14 @@
 //! let options = GenerationOptions { max_new_tokens: 64, sampling: SamplingParams::default(), stop_tokens: vec![] };
 //! let output = engine.generate_text("Why is the sky blue?", PromptFormat::ChatMl, &options, |piece| print!("{piece}"))?;
 //! println!("\n{:.1} tok/s", output.stats.decode_tokens_per_second());
-//! # Ok::<(), hale::HaleError>(())
+//! # Ok::<(), hale::HaleTokenError>(())
 //! ```
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::ModelConfig;
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 use crate::expert::planner::{self, HardwareProfile, ModelShape, Plan, PlanRequest};
 use crate::expert::{
     CachePolicy, CheckpointExpertSource, ExpertCache, ExpertKey, ExpertSource, PackExpertSource,
@@ -74,13 +74,25 @@ pub struct Engine {
 
 impl Engine {
     /// Loads a Hugging Face checkpoint or a `hale convert` output directory.
+    #[tracing::instrument(level = "info", skip(options), fields(dir = %dir.display()))]
     pub fn load(dir: &Path, options: EngineOptions) -> Result<Self> {
         let config = ModelConfig::from_dir(dir)?;
+        tracing::info!(
+            architecture = ?config.architecture,
+            layers = config.num_layers,
+            experts = config.num_experts,
+            "loaded model config"
+        );
         let tensors = Arc::new(SafetensorsCheckpoint::open_dir(dir)?);
 
         let source: Arc<dyn ExpertSource> = if dir.join(PACK_FILE_NAME).exists() {
+            tracing::info!(
+                pack = PACK_FILE_NAME,
+                "experts from a converted expert pack"
+            );
             Arc::new(PackExpertSource::open(&dir.join(PACK_FILE_NAME))?)
         } else {
+            tracing::info!("experts memory-mapped from the checkpoint (no expert pack)");
             Arc::new(CheckpointExpertSource::new(
                 tensors.clone() as Arc<dyn TensorSource>,
                 &config,
@@ -98,8 +110,22 @@ impl Engine {
         let policy = cache_policy(&config, source.as_ref(), &plan, &options, &routing);
         let cache = ExpertCache::new(source.clone(), routing, policy)?;
 
+        tracing::debug!(
+            feasible = plan.feasible,
+            resident = plan.fully_resident,
+            est_tokens_per_second = plan.est_tokens_per_second,
+            "placement plan"
+        );
+
         let model = Transformer::load(config, &*tensors, Arc::new(cache))?;
-        let tokenizer = Tokenizer::from_dir(dir).ok();
+        // A model without tokenizer files can still run on token ids (`hale logits`).
+        let tokenizer = match Tokenizer::from_dir(dir) {
+            Ok(t) => Some(t),
+            Err(err) => {
+                tracing::warn!(%err, "no usable tokenizer; text prompts are unavailable");
+                None
+            }
+        };
         Ok(Engine {
             model,
             tokenizer,
@@ -152,10 +178,9 @@ impl Engine {
         options: &GenerationOptions,
         mut on_text: impl FnMut(&str),
     ) -> Result<TextOutput> {
-        let tokenizer = self
-            .tokenizer
-            .as_ref()
-            .ok_or_else(|| HaleError::Tokenizer("model directory has no tokenizer.json".into()))?;
+        let tokenizer = self.tokenizer.as_ref().ok_or_else(|| {
+            HaleTokenError::Tokenizer("model directory has no tokenizer.json".into())
+        })?;
         let prompt_ids = tokenizer.encode(&format.apply(prompt), true)?;
 
         let mut options = options.clone();
@@ -212,11 +237,26 @@ impl Engine {
 }
 
 /// Loads saved counters if they exist and match the model's shape.
+/// Loads saved routing statistics, or starts empty ones when none fit this model.
+///
+/// Missing or mismatched statistics are expected (first run, different model), so they are
+/// logged and replaced rather than treated as errors.
 fn load_routing_stats(path: &Path, config: &ModelConfig) -> RoutingStats {
-    RoutingStats::load(path)
-        .ok()
-        .filter(|s| s.num_layers() == config.num_layers && s.num_experts() == config.num_experts)
-        .unwrap_or_else(|| RoutingStats::new(config.num_layers, config.num_experts))
+    let fresh = || RoutingStats::new(config.num_layers, config.num_experts);
+    match RoutingStats::load(path) {
+        Ok(s) if s.num_layers() == config.num_layers && s.num_experts() == config.num_experts => {
+            tracing::debug!(path = %path.display(), tokens = s.total(), "loaded routing statistics");
+            s
+        }
+        Ok(_) => {
+            tracing::warn!(path = %path.display(), "routing statistics are for another model; ignoring");
+            fresh()
+        }
+        Err(err) => {
+            tracing::debug!(path = %path.display(), %err, "no routing statistics yet");
+            fresh()
+        }
+    }
 }
 
 fn make_plan(

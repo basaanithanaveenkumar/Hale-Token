@@ -148,6 +148,8 @@ impl<K: Hash + Eq + Clone, V: Clone> LruCache<K, V> {
         keys
     }
 
+    // `idx` always comes from `map` or a list link, both of which only ever point at occupied
+    // slots; an empty slot here means the list is corrupted (a bug), so panicking is correct.
     fn node(&self, idx: usize) -> &Node<K, V> {
         self.slab[idx].as_ref().expect("live slot")
     }

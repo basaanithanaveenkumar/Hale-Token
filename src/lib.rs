@@ -37,4 +37,4 @@ pub mod tokenizer;
 
 pub use config::{Architecture, ModelConfig};
 pub use engine::{Engine, EngineOptions};
-pub use error::{HaleError, Result};
+pub use error::{HaleTokenError, Result};

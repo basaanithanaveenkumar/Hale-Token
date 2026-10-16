@@ -9,7 +9,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 
 /// The model families Hale-Token can execute.
 ///
@@ -30,7 +30,7 @@ impl Architecture {
         match name {
             "Qwen3MoeForCausalLM" => Ok(Architecture::Qwen3Moe),
             "MixtralForCausalLM" => Ok(Architecture::Mixtral),
-            other => Err(HaleError::UnsupportedArchitecture(other.to_string())),
+            other => Err(HaleTokenError::UnsupportedArchitecture(other.to_string())),
         }
     }
 
@@ -137,10 +137,10 @@ impl ModelConfig {
     /// Reads and normalises `<dir>/config.json`.
     pub fn from_dir(dir: &Path) -> Result<Self> {
         let path = dir.join("config.json");
-        let text = std::fs::read_to_string(&path).map_err(|e| HaleError::io(&path, e))?;
+        let text = std::fs::read_to_string(&path).map_err(|e| HaleTokenError::io(&path, e))?;
         Self::from_json_str(&text).map_err(|e| match e {
-            HaleError::InvalidArgument(msg) => {
-                HaleError::InvalidArgument(format!("{}: {msg}", path.display()))
+            HaleTokenError::InvalidArgument(msg) => {
+                HaleTokenError::InvalidArgument(format!("{}: {msg}", path.display()))
             }
             other => other,
         })
@@ -149,21 +149,19 @@ impl ModelConfig {
     /// Parses a `config.json` document held in memory.
     pub fn from_json_str(text: &str) -> Result<Self> {
         let hf: HfConfig = serde_json::from_str(text)
-            .map_err(|e| HaleError::InvalidArgument(format!("config.json: {e}")))?;
+            .map_err(|e| HaleTokenError::InvalidArgument(format!("config.json: {e}")))?;
         Self::from_hf(hf)
     }
 
     fn from_hf(hf: HfConfig) -> Result<Self> {
-        let arch_name = hf
-            .architectures
-            .first()
-            .ok_or_else(|| HaleError::InvalidArgument("config.json has no architectures".into()))?;
+        let arch_name = hf.architectures.first().ok_or_else(|| {
+            HaleTokenError::InvalidArgument("config.json has no architectures".into())
+        })?;
         let architecture = Architecture::from_hf_name(arch_name)?;
 
-        let num_experts = hf
-            .num_experts
-            .or(hf.num_local_experts)
-            .ok_or_else(|| HaleError::InvalidArgument("config.json has no expert count".into()))?;
+        let num_experts = hf.num_experts.or(hf.num_local_experts).ok_or_else(|| {
+            HaleTokenError::InvalidArgument("config.json has no expert count".into())
+        })?;
         let dense_intermediate_size = hf.intermediate_size.unwrap_or(0);
         // Mixtral experts use `intermediate_size`; Qwen3 has a dedicated field.
         let expert_intermediate_size = hf.moe_intermediate_size.unwrap_or(dense_intermediate_size);
@@ -217,7 +215,7 @@ impl ModelConfig {
 
     /// Rejects configurations the engine cannot run.
     pub fn validate(&self) -> Result<()> {
-        let bad = |m: String| Err(HaleError::InvalidArgument(m));
+        let bad = |m: String| Err(HaleTokenError::InvalidArgument(m));
         if self.num_kv_heads == 0 || self.num_heads % self.num_kv_heads != 0 {
             return bad(format!(
                 "num_attention_heads ({}) must be a multiple of num_key_value_heads ({})",
@@ -350,7 +348,7 @@ mod tests {
         let json = QWEN3_30B.replace("Qwen3MoeForCausalLM", "LlamaForCausalLM");
         assert!(matches!(
             ModelConfig::from_json_str(&json),
-            Err(HaleError::UnsupportedArchitecture(_))
+            Err(HaleTokenError::UnsupportedArchitecture(_))
         ));
     }
 }

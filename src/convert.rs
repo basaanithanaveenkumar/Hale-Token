@@ -20,7 +20,7 @@ use std::time::Instant;
 use rayon::prelude::*;
 
 use crate::config::ModelConfig;
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 use crate::expert::{
     CheckpointExpertSource, ExpertKey, ExpertSource, PackHeader, PackWriter, PACK_FILE_NAME,
 };
@@ -60,13 +60,14 @@ pub fn convert_checkpoint(
     progress: impl Fn(usize, usize) + Sync,
 ) -> Result<ConvertReport> {
     if src == dst {
-        return Err(HaleError::InvalidArgument(
+        return Err(HaleTokenError::InvalidArgument(
             "output directory must differ from the input".into(),
         ));
     }
     let started = Instant::now();
     let config = ModelConfig::from_dir(src)?;
-    std::fs::create_dir_all(dst).map_err(|e| HaleError::io(dst, e))?;
+    tracing::info!(src = %src.display(), dst = %dst.display(), %expert_dtype, "converting checkpoint");
+    std::fs::create_dir_all(dst).map_err(|e| HaleTokenError::io(dst, e))?;
     let checkpoint = Arc::new(SafetensorsCheckpoint::open_dir(src)?);
     let naming = naming_for(config.architecture);
 
@@ -105,7 +106,14 @@ pub fn convert_checkpoint(
             let key = ExpertKey::new(l, e);
             writer.write_expert(key, &source.load(key)?)
         })?;
-        progress(done.fetch_add(1, Ordering::SeqCst) + 1, layers.len());
+        let finished = done.fetch_add(1, Ordering::SeqCst) + 1;
+        tracing::debug!(
+            layer = l,
+            finished,
+            total = layers.len(),
+            "expert layer packed"
+        );
+        progress(finished, layers.len());
     }
     writer.finish()?;
 
@@ -113,10 +121,16 @@ pub fn convert_checkpoint(
     for file in COPIED_FILES {
         let from = src.join(file);
         if from.exists() {
-            std::fs::copy(&from, dst.join(file)).map_err(|e| HaleError::io(&from, e))?;
+            std::fs::copy(&from, dst.join(file)).map_err(|e| HaleTokenError::io(&from, e))?;
         }
     }
 
+    tracing::info!(
+        seconds = started.elapsed().as_secs_f64(),
+        pack_bytes,
+        dense_tensors = dense.len(),
+        "conversion finished"
+    );
     Ok(ConvertReport {
         dense_tensors: dense.len(),
         dense_bytes,

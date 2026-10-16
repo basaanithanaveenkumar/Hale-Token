@@ -5,7 +5,7 @@ use std::time::Instant;
 use serde::Serialize;
 
 use super::SamplingParams;
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 use crate::expert::CacheStats;
 use crate::model::{KvCache, Transformer};
 
@@ -61,7 +61,7 @@ pub fn generate(
     let max = model.config.max_position_embeddings;
     let needed = prompt.len().saturating_add(options.max_new_tokens);
     if needed > max {
-        return Err(HaleError::ContextOverflow { needed, max });
+        return Err(HaleTokenError::ContextOverflow { needed, max });
     }
     let mut cache: KvCache = model.new_cache(needed);
     let mut sampler = options.sampling.build();

@@ -1,18 +1,30 @@
 //! Crate-wide error type.
 //!
 //! Every fallible function in the library returns [`Result<T>`], so callers
-//! only ever have to handle one error type. Each variant carries enough
-//! context to be printed straight to a user.
+//! only ever have to handle one error type, [`HaleTokenError`]. Each variant
+//! carries enough context to be printed straight to a user.
+//!
+//! ```text
+//! HaleTokenError
+//! ├── Io / Json / Safetensors / Serialization   reading and writing files
+//! ├── MissingTensor / BadTensor                 checkpoint contents
+//! ├── UnsupportedArchitecture                   model family not implemented
+//! ├── InvalidArgument / ContextOverflow         bad user input
+//! ├── Tokenizer                                 tokenizer load / encode / decode
+//! └── Internal                                  a broken invariant (a bug), never user input
+//! ```
 
 use std::path::PathBuf;
 
 /// Everything that can go wrong inside Hale-Token.
 #[derive(Debug, thiserror::Error)]
-pub enum HaleError {
+pub enum HaleTokenError {
     /// A filesystem or I/O failure, annotated with the path involved.
     #[error("I/O error on {path}: {source}")]
     Io {
+        /// File or directory involved.
         path: PathBuf,
+        /// The underlying I/O error.
         #[source]
         source: std::io::Error,
     },
@@ -20,14 +32,21 @@ pub enum HaleError {
     /// A JSON file (config, manifest, stats) could not be parsed.
     #[error("invalid JSON in {path}: {source}")]
     Json {
+        /// File that failed to parse.
         path: PathBuf,
+        /// The underlying serde error.
         #[source]
         source: serde_json::Error,
     },
 
     /// A safetensors file is malformed.
     #[error("invalid safetensors file {path}: {message}")]
-    Safetensors { path: PathBuf, message: String },
+    Safetensors {
+        /// File that is malformed.
+        path: PathBuf,
+        /// What is wrong with it.
+        message: String,
+    },
 
     /// A tensor the model needs is not present in the checkpoint.
     #[error("tensor `{0}` not found in checkpoint")]
@@ -35,7 +54,12 @@ pub enum HaleError {
 
     /// A tensor exists but has an unexpected shape or dtype.
     #[error("tensor `{name}`: {message}")]
-    BadTensor { name: String, message: String },
+    BadTensor {
+        /// Tensor name.
+        name: String,
+        /// What is wrong with it.
+        message: String,
+    },
 
     /// The checkpoint uses a model architecture we do not implement.
     #[error(
@@ -53,24 +77,51 @@ pub enum HaleError {
 
     /// The prompt plus requested tokens do not fit the model context.
     #[error("context overflow: {needed} tokens needed but the model supports {max}")]
-    ContextOverflow { needed: usize, max: usize },
+    ContextOverflow {
+        /// Tokens required (prompt + requested new tokens).
+        needed: usize,
+        /// Maximum context length of the model.
+        max: usize,
+    },
+
+    /// An in-memory value could not be serialised (e.g. a header or stats to JSON).
+    #[error("cannot serialise {what}: {source}")]
+    Serialization {
+        /// What was being serialised.
+        what: &'static str,
+        /// The underlying serde error.
+        #[source]
+        source: serde_json::Error,
+    },
+
+    /// An internal invariant was violated. This is a bug in Hale-Token, not a user error.
+    #[error("internal error: {0} (please report this as a bug)")]
+    Internal(String),
 }
 
-/// Convenience alias used across the crate.
-pub type Result<T> = std::result::Result<T, HaleError>;
+/// Former name of [`HaleTokenError`], kept so existing code keeps compiling.
+pub type HaleError = HaleTokenError;
 
-impl HaleError {
-    /// Builds an [`HaleError::Io`] from an `io::Error` and the path it concerns.
+/// Convenience alias used across the crate.
+pub type Result<T> = std::result::Result<T, HaleTokenError>;
+
+impl HaleTokenError {
+    /// Builds an [`HaleTokenError::Io`] from an `io::Error` and the path it concerns.
     pub fn io(path: impl Into<PathBuf>, source: std::io::Error) -> Self {
-        HaleError::Io {
+        HaleTokenError::Io {
             path: path.into(),
             source,
         }
     }
 
-    /// Builds an [`HaleError::BadTensor`].
+    /// Builds a [`HaleTokenError::Serialization`] for `what`.
+    pub fn serialization(what: &'static str, source: serde_json::Error) -> Self {
+        HaleTokenError::Serialization { what, source }
+    }
+
+    /// Builds an [`HaleTokenError::BadTensor`].
     pub fn bad_tensor(name: impl Into<String>, message: impl Into<String>) -> Self {
-        HaleError::BadTensor {
+        HaleTokenError::BadTensor {
             name: name.into(),
             message: message.into(),
         }

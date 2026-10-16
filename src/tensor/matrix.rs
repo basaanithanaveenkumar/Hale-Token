@@ -4,7 +4,7 @@ use rayon::prelude::*;
 
 use super::quant::{self, Q8Activations};
 use super::{ByteBuf, DType};
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 
 /// Rows handed to one rayon task. Small enough to balance well across the
 /// performance and efficiency cores, large enough to amortise scheduling.
@@ -29,7 +29,7 @@ impl WeightMatrix {
     pub fn new(rows: usize, cols: usize, dtype: DType, data: ByteBuf) -> Result<Self> {
         let row_bytes = dtype.row_bytes(cols)?;
         if data.len() != rows * row_bytes {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "matrix {rows}x{cols} {dtype} needs {} bytes, got {}",
                 rows * row_bytes,
                 data.len()
@@ -47,7 +47,7 @@ impl WeightMatrix {
     /// Encodes a row-major `f32` slice into `dtype`.
     pub fn from_f32(rows: usize, cols: usize, dtype: DType, values: &[f32]) -> Result<Self> {
         if values.len() != rows * cols {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "expected {} values for a {rows}x{cols} matrix, got {}",
                 rows * cols,
                 values.len()

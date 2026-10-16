@@ -10,7 +10,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use super::ExpertKey;
-use crate::error::{HaleError, Result};
+use crate::error::{HaleTokenError, Result};
 
 /// Selection counts for every `(layer, expert)` pair, stored as one flat
 /// vector indexed by `layer * num_experts + expert` (cache friendly and
@@ -107,13 +107,14 @@ impl RoutingStats {
 
     /// Loads counters from `path`.
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).map_err(|e| HaleError::io(path, e))?;
-        let stats: RoutingStats = serde_json::from_str(&text).map_err(|e| HaleError::Json {
-            path: path.to_path_buf(),
-            source: e,
-        })?;
+        let text = std::fs::read_to_string(path).map_err(|e| HaleTokenError::io(path, e))?;
+        let stats: RoutingStats =
+            serde_json::from_str(&text).map_err(|e| HaleTokenError::Json {
+                path: path.to_path_buf(),
+                source: e,
+            })?;
         if stats.counts.len() != stats.num_layers * stats.num_experts {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "{}: counter length does not match its shape",
                 path.display()
             )));
@@ -123,8 +124,9 @@ impl RoutingStats {
 
     /// Saves counters to `path` as JSON.
     pub fn save(&self, path: &Path) -> Result<()> {
-        let text = serde_json::to_string(self).expect("stats serialise");
-        std::fs::write(path, text).map_err(|e| HaleError::io(path, e))
+        let text = serde_json::to_string(self)
+            .map_err(|e| HaleTokenError::serialization("routing stats", e))?;
+        std::fs::write(path, text).map_err(|e| HaleTokenError::io(path, e))
     }
 }
 

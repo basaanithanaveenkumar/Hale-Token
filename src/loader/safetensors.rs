@@ -23,8 +23,8 @@ use std::sync::Arc;
 use memmap2::Mmap;
 use serde::{Deserialize, Serialize};
 
-use super::TensorSource;
-use crate::error::{HaleError, Result};
+use super::{read_u64_le, TensorSource};
+use crate::error::{HaleTokenError, Result};
 use crate::tensor::{quant, ByteBuf, DType, WeightMatrix};
 
 /// Header entry for one tensor.
@@ -63,13 +63,13 @@ impl SafetensorsCheckpoint {
             return Self::open_files(&shards_from_index(&index, dir)?);
         }
         let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
-            .map_err(|e| HaleError::io(dir, e))?
+            .map_err(|e| HaleTokenError::io(dir, e))?
             .filter_map(|entry| entry.ok().map(|e| e.path()))
             .filter(|p| p.extension().is_some_and(|ext| ext == "safetensors"))
             .collect();
         files.sort();
         if files.is_empty() {
-            return Err(HaleError::InvalidArgument(format!(
+            return Err(HaleTokenError::InvalidArgument(format!(
                 "no .safetensors files in {}",
                 dir.display()
             )));
@@ -82,10 +82,10 @@ impl SafetensorsCheckpoint {
         let mut maps = Vec::with_capacity(files.len());
         let mut index = HashMap::new();
         for (shard, path) in files.iter().enumerate() {
-            let file = File::open(path).map_err(|e| HaleError::io(path, e))?;
+            let file = File::open(path).map_err(|e| HaleTokenError::io(path, e))?;
             // SAFETY: the map is read-only. Mutating a checkpoint while it is
             // being served is unsupported, exactly as with any mmap-based loader.
-            let map = unsafe { Mmap::map(&file) }.map_err(|e| HaleError::io(path, e))?;
+            let map = unsafe { Mmap::map(&file) }.map_err(|e| HaleTokenError::io(path, e))?;
             for (name, info, start) in parse_header(path, &map)? {
                 index.insert(name, Location { shard, info, start });
             }
@@ -119,13 +119,13 @@ impl SafetensorsCheckpoint {
     fn location(&self, name: &str) -> Result<&Location> {
         self.index
             .get(name)
-            .ok_or_else(|| HaleError::MissingTensor(name.to_string()))
+            .ok_or_else(|| HaleTokenError::MissingTensor(name.to_string()))
     }
 
     fn bytes_and_dtype(&self, name: &str) -> Result<(ByteBuf, DType, &TensorInfo)> {
         let loc = self.location(name)?;
         let dtype = DType::from_safetensors(&loc.info.dtype).ok_or_else(|| {
-            HaleError::bad_tensor(name, format!("unsupported dtype {}", loc.info.dtype))
+            HaleTokenError::bad_tensor(name, format!("unsupported dtype {}", loc.info.dtype))
         })?;
         let len = loc.info.data_offsets[1] - loc.info.data_offsets[0];
         let buf = ByteBuf::mapped(Arc::clone(&self.maps[loc.shard]), loc.start, len);
@@ -141,25 +141,25 @@ impl TensorSource for SafetensorsCheckpoint {
     fn matrix(&self, name: &str) -> Result<WeightMatrix> {
         let (buf, dtype, info) = self.bytes_and_dtype(name)?;
         let [rows, cols] = info.shape[..] else {
-            return Err(HaleError::bad_tensor(
+            return Err(HaleTokenError::bad_tensor(
                 name,
                 format!("expected 2-D, got shape {:?}", info.shape),
             ));
         };
         WeightMatrix::new(rows, cols, dtype, buf)
-            .map_err(|e| HaleError::bad_tensor(name, e.to_string()))
+            .map_err(|e| HaleTokenError::bad_tensor(name, e.to_string()))
     }
 
     fn vector(&self, name: &str) -> Result<Vec<f32>> {
         let (buf, dtype, info) = self.bytes_and_dtype(name)?;
         let [n] = info.shape[..] else {
-            return Err(HaleError::bad_tensor(
+            return Err(HaleTokenError::bad_tensor(
                 name,
                 format!("expected 1-D, got shape {:?}", info.shape),
             ));
         };
         if buf.len() != n * dtype.block_bytes() {
-            return Err(HaleError::bad_tensor(
+            return Err(HaleTokenError::bad_tensor(
                 name,
                 "byte length does not match shape",
             ));
@@ -176,8 +176,8 @@ fn shards_from_index(index: &Path, dir: &Path) -> Result<Vec<PathBuf>> {
     struct Index {
         weight_map: BTreeMap<String, String>,
     }
-    let text = std::fs::read_to_string(index).map_err(|e| HaleError::io(index, e))?;
-    let parsed: Index = serde_json::from_str(&text).map_err(|e| HaleError::Json {
+    let text = std::fs::read_to_string(index).map_err(|e| HaleTokenError::io(index, e))?;
+    let parsed: Index = serde_json::from_str(&text).map_err(|e| HaleTokenError::Json {
         path: index.to_path_buf(),
         source: e,
     })?;
@@ -193,20 +193,20 @@ fn shards_from_index(index: &Path, dir: &Path) -> Result<Vec<PathBuf>> {
 
 /// Parses and validates the JSON header of one shard.
 fn parse_header(path: &Path, bytes: &[u8]) -> Result<Vec<(String, TensorInfo, usize)>> {
-    let bad = |message: &str| HaleError::Safetensors {
+    let bad = |message: &str| HaleTokenError::Safetensors {
         path: path.to_path_buf(),
         message: message.to_string(),
     };
     if bytes.len() < 8 {
         return Err(bad("file shorter than the 8-byte header length"));
     }
-    let header_len = u64::from_le_bytes(bytes[..8].try_into().expect("8 bytes")) as usize;
+    let header_len = read_u64_le(bytes) as usize;
     let data_start = 8usize
         .checked_add(header_len)
         .filter(|end| *end <= bytes.len())
         .ok_or_else(|| bad("header length exceeds file size"))?;
     let header: BTreeMap<String, serde_json::Value> = serde_json::from_slice(&bytes[8..data_start])
-        .map_err(|e| HaleError::Json {
+        .map_err(|e| HaleTokenError::Json {
             path: path.to_path_buf(),
             source: e,
         })?;
@@ -216,7 +216,7 @@ fn parse_header(path: &Path, bytes: &[u8]) -> Result<Vec<(String, TensorInfo, us
         if name == "__metadata__" {
             continue;
         }
-        let info: TensorInfo = serde_json::from_value(value).map_err(|e| HaleError::Json {
+        let info: TensorInfo = serde_json::from_value(value).map_err(|e| HaleTokenError::Json {
             path: path.to_path_buf(),
             source: e,
         })?;
@@ -247,7 +247,9 @@ pub fn write_safetensors(
     let mut offset = 0usize;
     for (name, shape, dtype, bytes) in tensors {
         let dtype_name = dtype.safetensors_name().ok_or_else(|| {
-            HaleError::InvalidArgument(format!("{name}: {dtype} cannot be stored in safetensors"))
+            HaleTokenError::InvalidArgument(format!(
+                "{name}: {dtype} cannot be stored in safetensors"
+            ))
         })?;
         let info = TensorInfo {
             dtype: dtype_name.to_string(),
@@ -257,14 +259,16 @@ pub fn write_safetensors(
         header.insert(name.clone(), info);
         offset += bytes.len();
     }
-    let mut json = serde_json::to_vec(&header).expect("header serialises");
+    let mut json = serde_json::to_vec(&header)
+        .map_err(|e| HaleTokenError::serialization("safetensors header", e))?;
     // The spec recommends padding the header to 8 bytes so data is aligned.
     while json.len() % 8 != 0 {
         json.push(b' ');
     }
 
-    let mut file = std::io::BufWriter::new(File::create(path).map_err(|e| HaleError::io(path, e))?);
-    let io = |e| HaleError::io(path, e);
+    let mut file =
+        std::io::BufWriter::new(File::create(path).map_err(|e| HaleTokenError::io(path, e))?);
+    let io = |e| HaleTokenError::io(path, e);
     file.write_all(&(json.len() as u64).to_le_bytes())
         .map_err(io)?;
     file.write_all(&json).map_err(io)?;
@@ -306,7 +310,7 @@ mod tests {
         assert_eq!(ckpt.vector("norm").unwrap(), vec![0.5, -0.5]);
         assert!(matches!(
             ckpt.matrix("missing"),
-            Err(HaleError::MissingTensor(_))
+            Err(HaleTokenError::MissingTensor(_))
         ));
         assert!(ckpt.vector("w").is_err(), "2-D tensor is not a vector");
     }
@@ -349,7 +353,7 @@ mod tests {
         std::fs::write(dir.path().join("x.safetensors"), file).unwrap();
         assert!(matches!(
             SafetensorsCheckpoint::open_dir(dir.path()),
-            Err(HaleError::Safetensors { .. })
+            Err(HaleTokenError::Safetensors { .. })
         ));
     }
 
