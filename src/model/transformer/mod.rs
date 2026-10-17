@@ -1,6 +1,10 @@
 //! The complete decoder-only transformer.
 
-use std::sync::Arc;
+mod decoder_layer;
+mod feed_forward;
+
+pub use self::decoder_layer::DecoderLayer;
+pub use self::feed_forward::FeedForward;
 
 use super::arch::{naming_for, AttnTensor, MlpProj};
 use super::{Attention, KvCache, MoeLayer};
@@ -10,34 +14,7 @@ use crate::expert::{Expert, ExpertProvider};
 use crate::loader::TensorSource;
 use crate::ops::{rms_norm, Rope};
 use crate::tensor::WeightMatrix;
-
-/// The feed-forward half of a decoder layer.
-pub enum FeedForward {
-    /// A plain SwiGLU MLP that every token uses.
-    Dense(Expert),
-    /// A routed Mixture-of-Experts block.
-    Moe(MoeLayer),
-}
-
-impl FeedForward {
-    fn forward(&self, x: &[f32], out: &mut [f32]) -> Result<()> {
-        match self {
-            FeedForward::Dense(mlp) => {
-                mlp.forward(x, out);
-                Ok(())
-            }
-            FeedForward::Moe(moe) => moe.forward(x, out),
-        }
-    }
-}
-
-/// Attention + feed-forward with pre-normalisation and residuals.
-pub struct DecoderLayer {
-    pub input_norm: Vec<f32>,
-    pub attention: Attention,
-    pub post_attention_norm: Vec<f32>,
-    pub feed_forward: FeedForward,
-}
+use std::sync::Arc;
 
 /// A loaded model ready to run.
 pub struct Transformer {

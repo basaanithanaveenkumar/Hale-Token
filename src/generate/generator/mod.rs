@@ -1,52 +1,14 @@
 //! The autoregressive decode loop.
 
-use std::time::Instant;
+mod generation_options;
+mod generation_stats;
 
-use serde::Serialize;
+pub use self::generation_options::GenerationOptions;
+pub use self::generation_stats::GenerationStats;
 
-use super::SamplingParams;
 use crate::error::{HaleTokenError, Result};
-use crate::expert::CacheStats;
 use crate::model::{KvCache, Transformer};
-
-/// Settings for one generation call.
-#[derive(Debug, Clone)]
-pub struct GenerationOptions {
-    pub max_new_tokens: usize,
-    pub sampling: SamplingParams,
-    /// Generation stops after emitting any of these ids.
-    pub stop_tokens: Vec<u32>,
-}
-
-/// Timing and cache figures for one generation call.
-#[derive(Debug, Clone, Serialize)]
-pub struct GenerationStats {
-    pub prompt_tokens: usize,
-    pub generated_tokens: usize,
-    pub prefill_seconds: f64,
-    pub decode_seconds: f64,
-    pub cache: CacheStats,
-}
-
-impl GenerationStats {
-    /// Prompt processing speed.
-    pub fn prefill_tokens_per_second(&self) -> f64 {
-        rate(self.prompt_tokens, self.prefill_seconds)
-    }
-
-    /// Generation speed (excluding the first token, which comes from prefill).
-    pub fn decode_tokens_per_second(&self) -> f64 {
-        rate(self.generated_tokens.saturating_sub(1), self.decode_seconds)
-    }
-}
-
-fn rate(tokens: usize, seconds: f64) -> f64 {
-    if seconds > 0.0 {
-        tokens as f64 / seconds
-    } else {
-        0.0
-    }
-}
+use std::time::Instant;
 
 /// Generates up to `options.max_new_tokens` tokens after `prompt`.
 ///

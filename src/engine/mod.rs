@@ -12,8 +12,11 @@
 //! # Ok::<(), hale::HaleTokenError>(())
 //! ```
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+mod engine_options;
+mod text_output;
+
+pub use self::engine_options::EngineOptions;
+pub use self::text_output::TextOutput;
 
 use crate::config::ModelConfig;
 use crate::error::{HaleTokenError, Result};
@@ -22,45 +25,16 @@ use crate::expert::{
     CachePolicy, CheckpointExpertSource, ExpertCache, ExpertKey, ExpertSource, PackExpertSource,
     RoutingStats, PACK_FILE_NAME,
 };
-use crate::generate::{generate, GenerationOptions, GenerationStats};
+use crate::generate::{generate, GenerationOptions};
 use crate::hardware;
 use crate::loader::{SafetensorsCheckpoint, TensorSource};
 use crate::model::Transformer;
 use crate::tokenizer::{PromptFormat, StreamDecoder, Tokenizer};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// File (inside the model directory) where routing counters persist.
 pub const ROUTING_STATS_FILE: &str = "hale-routing.json";
-
-/// Knobs for loading a model.
-#[derive(Debug, Clone)]
-pub struct EngineOptions {
-    /// RAM for experts in bytes. `None` = let the planner decide from the
-    /// machine's memory.
-    pub expert_ram_bytes: Option<usize>,
-    /// Share of total RAM the planner may use.
-    pub ram_fraction: f64,
-    /// Where routing counters are loaded from / saved to.
-    /// `None` = `<model>/hale-routing.json`.
-    pub routing_stats_path: Option<PathBuf>,
-}
-
-impl Default for EngineOptions {
-    fn default() -> Self {
-        EngineOptions {
-            expert_ram_bytes: None,
-            ram_fraction: planner::DEFAULT_RAM_FRACTION,
-            routing_stats_path: None,
-        }
-    }
-}
-
-/// Result of [`Engine::generate_text`].
-#[derive(Debug, Clone)]
-pub struct TextOutput {
-    pub text: String,
-    pub tokens: Vec<u32>,
-    pub stats: GenerationStats,
-}
 
 /// A loaded model, its tokenizer and its expert cache.
 pub struct Engine {

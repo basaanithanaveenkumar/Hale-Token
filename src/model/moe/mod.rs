@@ -1,18 +1,14 @@
 //! The sparse Mixture-of-Experts feed-forward layer.
 
-use std::sync::Arc;
+mod route;
+
+pub use self::route::Route;
 
 use crate::error::Result;
 use crate::expert::{ExpertKey, ExpertProvider};
 use crate::ops::{softmax_in_place, top_k};
 use crate::tensor::WeightMatrix;
-
-/// One routing decision: which expert, with what weight.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Route {
-    pub key: ExpertKey,
-    pub weight: f32,
-}
+use std::sync::Arc;
 
 /// Router plus a handle to the (tiered) expert store.
 ///

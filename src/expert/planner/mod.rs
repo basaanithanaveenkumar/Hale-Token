@@ -28,218 +28,36 @@
 //! 2. Otherwise split the budget: half pinned to the historically hottest
 //!    experts (if routing stats exist), the rest a recency (LRU) cache.
 
-use serde::Serialize;
+mod hardware_profile;
+mod model_shape;
+mod plan;
+mod plan_request;
 
-use crate::config::ModelConfig;
-use crate::hardware::ChipSpec;
+pub use self::hardware_profile::HardwareProfile;
+pub use self::model_shape::ModelShape;
+pub use self::plan::Plan;
+pub use self::plan::TierSplit;
+pub use self::plan_request::PlanRequest;
+
 use crate::tensor::DType;
 
 /// Fraction of advertised memory bandwidth the CPU cores actually achieve.
 pub const MEMORY_EFFICIENCY: f64 = 0.6;
+
 /// Sustained GFLOP/s per performance core for our quantized mat-vec kernels.
 pub const GFLOPS_PER_PERFORMANCE_CORE: f64 = 24.0;
+
 /// Sustained GFLOP/s per efficiency core.
 pub const GFLOPS_PER_EFFICIENCY_CORE: f64 = 6.0;
+
 /// Share of installed RAM Hale-Token may use; macOS and apps need the rest.
 pub const DEFAULT_RAM_FRACTION: f64 = 0.75;
+
 /// Conservative sustained random-read speed of an Apple internal SSD.
 pub const DEFAULT_SSD_GBPS: f64 = 5.0;
+
 /// Bytes kept free for activations, KV cache and the runtime.
 pub const RUNTIME_OVERHEAD_BYTES: f64 = 2.0e9;
-
-/// The sizes that matter for planning, independent of the architecture.
-#[derive(Debug, Clone, Serialize)]
-pub struct ModelShape {
-    pub name: String,
-    /// Parameters that are not routed experts.
-    pub dense_params: f64,
-    /// Parameters in one routed expert.
-    pub params_per_expert: f64,
-    pub moe_layers: usize,
-    pub experts_per_layer: usize,
-    pub experts_per_token: usize,
-    /// Whether Hale-Token can execute this architecture today.
-    pub runnable: bool,
-}
-
-impl ModelShape {
-    /// Shape of a model we can load.
-    pub fn from_config(name: &str, c: &ModelConfig) -> Self {
-        ModelShape {
-            name: name.to_string(),
-            dense_params: c.dense_params() as f64,
-            params_per_expert: c.params_per_expert() as f64,
-            moe_layers: c.num_moe_layers(),
-            experts_per_layer: c.num_experts,
-            experts_per_token: c.experts_per_token,
-            runnable: true,
-        }
-    }
-
-    pub fn total_experts(&self) -> usize {
-        self.moe_layers * self.experts_per_layer
-    }
-    pub fn total_params(&self) -> f64 {
-        self.dense_params + self.total_experts() as f64 * self.params_per_expert
-    }
-    pub fn active_params(&self) -> f64 {
-        self.dense_params
-            + (self.moe_layers * self.experts_per_token) as f64 * self.params_per_expert
-    }
-
-    /// Well-known MoE models for comparison. Figures derive from each
-    /// model's published `config.json`.
-    pub fn presets() -> Vec<ModelShape> {
-        let shape =
-            |name: &str, dense: f64, per_expert: f64, layers, experts, k, runnable| ModelShape {
-                name: name.to_string(),
-                dense_params: dense,
-                params_per_expert: per_expert,
-                moe_layers: layers,
-                experts_per_layer: experts,
-                experts_per_token: k,
-                runnable,
-            };
-        vec![
-            // hidden 2048, expert inter 768, 48 layers x 128 experts, top-8
-            shape(
-                "Qwen3-30B-A3B",
-                1.53e9,
-                3.0 * 2048.0 * 768.0,
-                48,
-                128,
-                8,
-                true,
-            ),
-            // hidden 4096, expert inter 1536, 94 layers x 128 experts, top-8
-            shape(
-                "Qwen3-235B-A22B",
-                7.98e9,
-                3.0 * 4096.0 * 1536.0,
-                94,
-                128,
-                8,
-                true,
-            ),
-            // hidden 4096, inter 14336, 32 layers x 8 experts, top-2
-            shape(
-                "Mixtral-8x7B",
-                1.60e9,
-                3.0 * 4096.0 * 14336.0,
-                32,
-                8,
-                2,
-                true,
-            ),
-            // hidden 6144, inter 16384, 56 layers x 8 experts, top-2
-            shape(
-                "Mixtral-8x22B",
-                5.34e9,
-                3.0 * 6144.0 * 16384.0,
-                56,
-                8,
-                2,
-                true,
-            ),
-            // hidden 7168, expert inter 2048, 58 MoE layers x 256 experts, top-8
-            shape(
-                "DeepSeek-V3 (671B)",
-                17.1e9,
-                3.0 * 7168.0 * 2048.0,
-                58,
-                256,
-                8,
-                false,
-            ),
-            // hidden 7168, expert inter 2048, 60 MoE layers x 384 experts, top-8
-            shape(
-                "Kimi-K2 (1T)",
-                11.5e9,
-                3.0 * 7168.0 * 2048.0,
-                60,
-                384,
-                8,
-                false,
-            ),
-        ]
-    }
-
-    /// Finds a preset by case-insensitive prefix, e.g. `"qwen3-235b"`.
-    pub fn preset(name: &str) -> Option<ModelShape> {
-        let wanted = name.to_ascii_lowercase();
-        Self::presets()
-            .into_iter()
-            .find(|p| p.name.to_ascii_lowercase().starts_with(&wanted))
-    }
-}
-
-/// The machine being planned for.
-#[derive(Debug, Clone, Serialize)]
-pub struct HardwareProfile {
-    pub name: String,
-    pub memory_bandwidth_gbps: f64,
-    pub ssd_bandwidth_gbps: f64,
-    pub ram_bytes: f64,
-    pub cpu_gflops: f64,
-}
-
-impl HardwareProfile {
-    /// Profile for a chip with `ram_gb` of unified memory.
-    pub fn from_chip(chip: &ChipSpec, ram_gb: f64) -> Self {
-        HardwareProfile {
-            name: format!("{} {:.0}GB", chip.name, ram_gb),
-            memory_bandwidth_gbps: chip.memory_bandwidth_gbps,
-            ssd_bandwidth_gbps: DEFAULT_SSD_GBPS,
-            ram_bytes: ram_gb * 1e9,
-            cpu_gflops: chip.performance_cores as f64 * GFLOPS_PER_PERFORMANCE_CORE
-                + chip.efficiency_cores as f64 * GFLOPS_PER_EFFICIENCY_CORE,
-        }
-    }
-}
-
-/// Planner inputs.
-#[derive(Debug, Clone)]
-pub struct PlanRequest {
-    pub model: ModelShape,
-    pub hardware: HardwareProfile,
-    /// Storage format of the dense weights (usually the checkpoint's bf16).
-    pub dense_dtype: DType,
-    /// Storage format of the experts (e.g. q4_0 after `hale convert`).
-    pub expert_dtype: DType,
-    /// Share of RAM we may use (see [`DEFAULT_RAM_FRACTION`]).
-    pub ram_fraction: f64,
-    /// Whether routing statistics exist to choose a pinned set.
-    pub have_routing_stats: bool,
-}
-
-/// How the tiers should be sized, and what speed to expect.
-#[derive(Debug, Clone, Serialize)]
-pub struct Plan {
-    pub dense_bytes: f64,
-    pub expert_bytes: f64,
-    pub total_expert_bytes: f64,
-    pub ram_budget_bytes: f64,
-    /// RAM available to experts after dense weights and overhead.
-    pub expert_ram_bytes: f64,
-    /// Dense weights plus overhead fit in RAM.
-    pub feasible: bool,
-    /// Every expert fits in RAM - no SSD traffic at all.
-    pub fully_resident: bool,
-    pub pinned_experts: usize,
-    pub lru_bytes: f64,
-    /// Expected fraction of expert requests served from RAM (floor).
-    pub expected_hit_rate: f64,
-    pub est_tokens_per_second: f64,
-    /// Which resource bounds the speed: "memory", "compute" or "ssd".
-    pub bottleneck: &'static str,
-}
-
-/// How many RAM-resident experts go to each tier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TierSplit {
-    pub pinned: usize,
-    pub lru: usize,
-}
 
 /// Divides `experts_in_ram` slots between the pinned and LRU tiers
 /// (the placement policy from the module docs).

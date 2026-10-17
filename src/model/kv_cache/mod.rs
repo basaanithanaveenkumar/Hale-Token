@@ -6,30 +6,9 @@
 //! back. Vectors are stored contiguously per layer (`[position][kv_dim]`)
 //! for cache-friendly scans.
 
-/// Keys and values of one layer.
-#[derive(Debug, Clone, Default)]
-pub struct LayerCache {
-    keys: Vec<f32>,
-    values: Vec<f32>,
-}
+mod layer_cache;
 
-impl LayerCache {
-    /// Appends one position's key and value vectors.
-    pub fn push(&mut self, key: &[f32], value: &[f32]) {
-        self.keys.extend_from_slice(key);
-        self.values.extend_from_slice(value);
-    }
-
-    /// Key vector at position `t` (length `kv_dim`).
-    pub fn key(&self, t: usize, kv_dim: usize) -> &[f32] {
-        &self.keys[t * kv_dim..(t + 1) * kv_dim]
-    }
-
-    /// Value vector at position `t` (length `kv_dim`).
-    pub fn value(&self, t: usize, kv_dim: usize) -> &[f32] {
-        &self.values[t * kv_dim..(t + 1) * kv_dim]
-    }
-}
+pub use self::layer_cache::LayerCache;
 
 /// The KV cache of the whole model for one sequence.
 #[derive(Debug, Clone)]

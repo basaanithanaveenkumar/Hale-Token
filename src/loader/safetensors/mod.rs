@@ -14,26 +14,20 @@
 //! shard holds which tensor, but since every shard's header lists its own
 //! tensors we simply read all headers and build one lookup table.
 
+mod tensor_info;
+
+pub use self::tensor_info::TensorInfo;
+
+use super::{read_u64_le, TensorSource};
+use crate::error::{HaleTokenError, Result};
+use crate::tensor::{quant, ByteBuf, DType, WeightMatrix};
+use memmap2::Mmap;
+use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-use memmap2::Mmap;
-use serde::{Deserialize, Serialize};
-
-use super::{read_u64_le, TensorSource};
-use crate::error::{HaleTokenError, Result};
-use crate::tensor::{quant, ByteBuf, DType, WeightMatrix};
-
-/// Header entry for one tensor.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TensorInfo {
-    pub dtype: String,
-    pub shape: Vec<usize>,
-    pub data_offsets: [usize; 2],
-}
 
 /// Where a tensor lives: which shard, and at which absolute byte offset.
 #[derive(Debug, Clone)]
