@@ -28,6 +28,9 @@
 
 mod cache;
 mod checkpoint_source;
+mod expert_key;
+mod expert_provider;
+mod expert_source;
 mod lru;
 mod pack;
 pub mod planner;
@@ -35,37 +38,15 @@ mod stats;
 
 pub use cache::{CachePolicy, CacheStats, ExpertCache};
 pub use checkpoint_source::CheckpointExpertSource;
+pub use expert_key::ExpertKey;
+pub use expert_provider::ExpertProvider;
+pub use expert_source::ExpertSource;
 pub use lru::LruCache;
 pub use pack::{PackExpertSource, PackHeader, PackWriter, PACK_FILE_NAME};
 pub use stats::RoutingStats;
 
-use std::sync::Arc;
-
-use crate::error::Result;
 use crate::ops::silu;
 use crate::tensor::WeightMatrix;
-
-/// Identifies one routed expert: `(layer, expert index within the layer)`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ExpertKey {
-    pub layer: u32,
-    pub expert: u32,
-}
-
-impl ExpertKey {
-    pub fn new(layer: usize, expert: usize) -> Self {
-        ExpertKey {
-            layer: layer as u32,
-            expert: expert as u32,
-        }
-    }
-}
-
-impl std::fmt::Display for ExpertKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "L{}E{}", self.layer, self.expert)
-    }
-}
 
 /// A SwiGLU feed-forward block: `down( silu(gate x) * up x )`.
 ///
@@ -101,37 +82,4 @@ impl Expert {
         }
         self.down.matvec(&gate, out);
     }
-}
-
-/// Cold storage able to load any expert on demand (tier 2).
-///
-/// Implementations must be thread-safe: the cache loads missing experts in
-/// parallel to keep the SSD's command queue full.
-pub trait ExpertSource: Send + Sync {
-    /// Loads expert `key`.
-    fn load(&self, key: ExpertKey) -> Result<Expert>;
-
-    /// Size in bytes of one loaded expert (all experts are the same size).
-    fn expert_bytes(&self) -> usize;
-
-    /// Whether `load` returns owned bytes (true) or zero-copy mmap views
-    /// (false). Caching mmap views gains nothing: the OS page cache already
-    /// is the cache, so the tiered cache is bypassed for such sources.
-    fn loads_into_ram(&self) -> bool;
-
-    /// Short human-readable description for logs.
-    fn describe(&self) -> String;
-}
-
-/// What the MoE layer depends on to obtain expert weights
-/// (Dependency Inversion: the model never knows about tiers or files).
-pub trait ExpertProvider: Send + Sync {
-    /// Returns the experts for `keys`, in the same order.
-    fn fetch(&self, keys: &[ExpertKey]) -> Result<Vec<Arc<Expert>>>;
-
-    /// Cache counters, if the provider keeps any.
-    fn stats(&self) -> CacheStats;
-
-    /// Routing counters observed so far.
-    fn routing_stats(&self) -> RoutingStats;
 }
