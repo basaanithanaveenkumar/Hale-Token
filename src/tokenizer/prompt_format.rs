@@ -3,6 +3,15 @@
 use crate::config::Architecture;
 
 /// How a user prompt is wrapped before tokenisation.
+///
+/// # Examples
+///
+/// ```
+/// use hale::tokenizer::PromptFormat;
+///
+/// assert_eq!(PromptFormat::MistralInstruct.apply("hi"), "[INST] hi [/INST]");
+/// assert_eq!(PromptFormat::Raw.apply("hi"), "hi");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PromptFormat {
     /// Send the text as-is (base models, or pre-formatted prompts).
@@ -39,5 +48,37 @@ impl PromptFormat {
             PromptFormat::ChatMl => &["<|im_end|>", "<|endoftext|>"],
             PromptFormat::MistralInstruct | PromptFormat::Raw => &[],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_architecture_has_its_native_format() {
+        assert_eq!(
+            PromptFormat::for_architecture(Architecture::Qwen3Moe),
+            PromptFormat::ChatMl
+        );
+        assert_eq!(
+            PromptFormat::for_architecture(Architecture::Mixtral),
+            PromptFormat::MistralInstruct
+        );
+    }
+
+    #[test]
+    fn chat_ml_wraps_user_turn_and_opens_assistant_turn() {
+        assert_eq!(
+            PromptFormat::ChatMl.apply("hi"),
+            "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n"
+        );
+    }
+
+    #[test]
+    fn only_chat_ml_adds_stop_strings() {
+        assert!(PromptFormat::ChatMl.stop_strings().contains(&"<|im_end|>"));
+        assert!(PromptFormat::Raw.stop_strings().is_empty());
+        assert!(PromptFormat::MistralInstruct.stop_strings().is_empty());
     }
 }

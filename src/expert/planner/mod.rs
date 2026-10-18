@@ -32,12 +32,13 @@ mod hardware_profile;
 mod model_shape;
 mod plan;
 mod plan_request;
+mod tier_split;
 
 pub use self::hardware_profile::HardwareProfile;
 pub use self::model_shape::ModelShape;
 pub use self::plan::Plan;
-pub use self::plan::TierSplit;
 pub use self::plan_request::PlanRequest;
+pub use self::tier_split::TierSplit;
 
 use crate::tensor::DType;
 

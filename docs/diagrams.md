@@ -99,3 +99,45 @@ flowchart TB
   LOAD --> TEN["tensor + ops"]
   EXP --> TEN
 ```
+
+## 7. Extension points (registries and traits)
+
+```mermaid
+classDiagram
+    class Registry~T, A~ {
+        +register(key, factory) Result
+        +register_force(key, factory)
+        +build(key, args) Result~Box~T~~
+    }
+    class TensorNaming {
+        <<trait>>
+        +expert(layer, expert, proj) String
+        +router(layer) String
+    }
+    class Sampler {
+        <<trait>>
+        +sample(logits) u32
+    }
+    class ExpertSource {
+        <<trait>>
+        +load(key) Expert
+    }
+    class ExpertProvider {
+        <<trait>>
+        +fetch(keys) Vec~Expert~
+    }
+    Registry --> TensorNaming : naming_registry()
+    Registry --> Sampler : sampler_registry()
+    TensorNaming <|.. MixtralNaming
+    TensorNaming <|.. Qwen3MoeNaming
+    Sampler <|.. Greedy
+    Sampler <|.. TopPSampler
+    ExpertSource <|.. CheckpointExpertSource
+    ExpertSource <|.. PackExpertSource
+    ExpertProvider <|.. ExpertCache
+    ExpertCache o-- ExpertSource : injected
+```
+
+An unknown or misspelled key raises `HaleTokenError::UnknownRegistryKey`
+with the closest registered names; a duplicate registration raises
+`DuplicateRegistryKey`.

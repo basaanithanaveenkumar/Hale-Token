@@ -43,10 +43,15 @@ const COPIED_FILES: &[&str] = &[
 /// Summary of a conversion.
 #[derive(Debug, Clone)]
 pub struct ConvertReport {
+    /// Number of dense (non-expert) tensors written.
     pub dense_tensors: usize,
+    /// Bytes occupied by the dense tensors.
     pub dense_bytes: usize,
+    /// Number of experts packed.
     pub experts: usize,
+    /// Size of the expert pack file in bytes.
     pub pack_bytes: usize,
+    /// Wall-clock duration of the conversion in seconds.
     pub seconds: f64,
 }
 

@@ -16,6 +16,7 @@ pub struct StreamDecoder<'a> {
 }
 
 impl<'a> StreamDecoder<'a> {
+    /// Creates a decoder that starts with no pending tokens.
     pub fn new(tokenizer: &'a Tokenizer) -> Self {
         StreamDecoder {
             tokenizer,

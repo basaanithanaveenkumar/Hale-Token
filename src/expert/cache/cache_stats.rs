@@ -15,10 +15,15 @@ pub struct CacheStats {
     pub bytes_loaded: u64,
     /// Wall-clock seconds spent loading from the source.
     pub load_seconds: f64,
+    /// Number of experts held in the pinned tier.
     pub pinned_experts: usize,
+    /// Bytes held in the pinned tier.
     pub pinned_bytes: usize,
+    /// Number of experts currently in the LRU tier.
     pub lru_experts: usize,
+    /// Bytes currently in the LRU tier.
     pub lru_bytes: usize,
+    /// Byte budget of the LRU tier.
     pub lru_capacity_bytes: usize,
     /// True when the source is memory-mapped and caching is left to the OS.
     pub passthrough: bool,

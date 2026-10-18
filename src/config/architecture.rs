@@ -26,6 +26,24 @@ impl Architecture {
         }
     }
 
+    /// The Hugging Face `architectures[0]` string for this family; the
+    /// inverse of [`Architecture::from_hf_name`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use hale::Architecture;
+    ///
+    /// let arch = Architecture::from_hf_name("MixtralForCausalLM").unwrap();
+    /// assert_eq!(arch.hf_name(), "MixtralForCausalLM");
+    /// ```
+    pub fn hf_name(self) -> &'static str {
+        match self {
+            Architecture::Qwen3Moe => "Qwen3MoeForCausalLM",
+            Architecture::Mixtral => "MixtralForCausalLM",
+        }
+    }
+
     /// Whether attention applies RMSNorm to each query/key head.
     pub fn uses_qk_norm(self) -> bool {
         matches!(self, Architecture::Qwen3Moe)

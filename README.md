@@ -233,19 +233,21 @@ println!("\n{:.1} tok/s, expert hit rate {:.0}%", out.stats.decode_tokens_per_se
 
 ```text
 src/
-  config.rs        config.json -> ModelConfig
+  config/          config.json -> ModelConfig, Architecture
+  registry/        Registry: name -> factory (tensor namings, samplers)
+  error.rs         HaleTokenError (root error enum) and Result
   tensor/          dtypes, zero-copy buffers, quantized kernels, mat-vec
   ops/             rmsnorm, rope, softmax/silu, heap top-k
   loader/          safetensors reader/writer (TensorSource trait)
   expert/          Expert, sources (checkpoint, SSD pack), tiered cache, LRU, stats, planner
   model/           attention, KV cache, MoE layer, transformer, tensor naming
   generate/        samplers, decode loop
-  tokenizer.rs     HF tokenizers wrapper, streaming decode, chat formats
+  tokenizer/       HF tokenizers wrapper, streaming decode, chat formats
   hardware/        M1-M5 chip table, sysctl detection, benchmarks
   convert.rs       hale convert
-  engine.rs        Engine facade
+  engine/          Engine facade
   cli/             the `hale` binary
-tests/             litmus, tiered cache, CLI tests + fixtures
+tests/             litmus, tiered cache, registries, CLI tests + fixtures
 scripts/           smoke test, real-model verification, reference implementation
 docs/              guides
 ```

@@ -6,10 +6,15 @@ use serde::Serialize;
 /// Timing and cache figures for one generation call.
 #[derive(Debug, Clone, Serialize)]
 pub struct GenerationStats {
+    /// Prompt length in tokens.
     pub prompt_tokens: usize,
+    /// Number of tokens generated.
     pub generated_tokens: usize,
+    /// Time spent on the prompt (prefill) in seconds.
     pub prefill_seconds: f64,
+    /// Time spent generating (decode) in seconds.
     pub decode_seconds: f64,
+    /// Expert cache statistics at the end of the run.
     pub cache: CacheStats,
 }
 

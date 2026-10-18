@@ -13,8 +13,11 @@ use crate::error::{HaleTokenError, Result};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DType {
+    /// 32-bit float.
     F32,
+    /// 16-bit IEEE float.
     F16,
+    /// 16-bit brain float.
     BF16,
     /// 8-bit blocks: `f16` scale + 32 x `i8`  (34 bytes per 32 values, ~8.5 bits/weight).
     #[serde(rename = "q8_0")]

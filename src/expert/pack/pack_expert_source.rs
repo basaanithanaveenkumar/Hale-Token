@@ -67,6 +67,7 @@ impl PackExpertSource {
         })
     }
 
+    /// The pack header (dtype and shape of every expert).
     pub fn header(&self) -> &PackHeader {
         &self.header
     }

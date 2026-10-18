@@ -10,10 +10,15 @@ use serde::{Deserialize, Serialize};
 /// Self-describing header stored at the start of the pack.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PackHeader {
+    /// Pack format version.
     pub version: u32,
+    /// Storage dtype of the expert weights.
     pub dtype: DType,
+    /// Model hidden size.
     pub hidden_size: usize,
+    /// Expert MLP intermediate size.
     pub intermediate_size: usize,
+    /// Total number of experts in the pack.
     pub num_experts: usize,
     /// Model layer indices that contain experts, in file order.
     pub moe_layers: Vec<usize>,
@@ -87,5 +92,51 @@ impl PackHeader {
             up: WeightMatrix::new(i, h, d, record.slice(proj_bytes, proj_bytes))?,
             down: WeightMatrix::new(h, i, d, record.slice(2 * proj_bytes, h * d.row_bytes(i)?))?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn header() -> PackHeader {
+        PackHeader {
+            version: FORMAT_VERSION,
+            dtype: DType::F32,
+            hidden_size: 4,
+            intermediate_size: 8,
+            num_experts: 3,
+            moe_layers: vec![1, 2],
+            record_bytes: 100,
+            record_stride: 128,
+            data_offset: 1024,
+        }
+    }
+
+    #[test]
+    fn offsets_follow_layer_ordinal_then_expert() {
+        let h = header();
+        assert_eq!(h.offset_of(ExpertKey::new(1, 0)).unwrap(), 1024);
+        assert_eq!(h.offset_of(ExpertKey::new(1, 2)).unwrap(), 1024 + 2 * 128);
+        assert_eq!(h.offset_of(ExpertKey::new(2, 1)).unwrap(), 1024 + 4 * 128);
+    }
+
+    #[test]
+    fn unknown_layer_or_expert_is_an_error() {
+        let h = header();
+        assert!(h.offset_of(ExpertKey::new(0, 0)).is_err());
+        assert!(h.offset_of(ExpertKey::new(1, 3)).is_err());
+    }
+
+    #[test]
+    fn file_size_covers_every_record() {
+        assert_eq!(header().file_size(), 1024 + 2 * 3 * 128);
+    }
+
+    #[test]
+    fn json_round_trips() {
+        let h = header();
+        let back: PackHeader = serde_json::from_slice(&h.to_json().unwrap()).unwrap();
+        assert_eq!(back, h);
     }
 }

@@ -87,8 +87,8 @@ Transformer::forward(token, cache)
 | **D**ependency inversion | `Transformer` holds an `Arc<dyn ExpertProvider>` and loads through `&dyn TensorSource`; the `Engine` decides the concrete types. |
 
 Object-oriented patterns used: **Facade** (`Engine`), **Strategy**
-(`Sampler`, `ExpertSource`), **Factory** (`SamplingParams::build`,
-`naming_for`), **Proxy/Decorator** (`ExpertCache` wraps an `ExpertSource`
+(`Sampler`, `ExpertSource`), **Registry/Factory** (`sampler_registry`,
+`naming_registry`, `SamplingParams::build`; see [diagrams](diagrams.md#7-extension-points-registries-and-traits)), **Proxy/Decorator** (`ExpertCache` wraps an `ExpertSource`
 and adds caching).
 
 ## Data structures and algorithms

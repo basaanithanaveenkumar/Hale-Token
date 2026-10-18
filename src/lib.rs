@@ -18,9 +18,12 @@
 //! | [`tokenizer`]  | Text <-> ids, chat prompt formats                         |
 //! | [`hardware`]   | Apple chip detection and bandwidth benchmarks             |
 //! | [`convert`]    | `hale convert`: checkpoint -> quantized expert pack       |
+//! | [`registry`]   | Name -> factory maps for pluggable implementations          |
 //! | [`engine`]     | [`Engine`]: loads everything and generates text           |
 //!
 //! Start reading at [`engine::Engine::load`]; it wires the other modules.
+
+#![warn(missing_docs)]
 
 pub mod config;
 pub mod convert;
@@ -32,6 +35,7 @@ pub mod hardware;
 pub mod loader;
 pub mod model;
 pub mod ops;
+pub mod registry;
 pub mod tensor;
 pub mod tokenizer;
 

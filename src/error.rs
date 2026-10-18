@@ -9,6 +9,7 @@
 //! ├── Io / Json / Safetensors / Serialization   reading and writing files
 //! ├── MissingTensor / BadTensor                 checkpoint contents
 //! ├── UnsupportedArchitecture                   model family not implemented
+//! ├── UnknownRegistryKey / DuplicateRegistryKey  name-selected implementations
 //! ├── InvalidArgument / ContextOverflow         bad user input
 //! ├── Tokenizer                                 tokenizer load / encode / decode
 //! └── Internal                                  a broken invariant (a bug), never user input
@@ -94,9 +95,37 @@ pub enum HaleTokenError {
         source: serde_json::Error,
     },
 
+    /// A registry lookup used a name nobody registered.
+    #[error("unknown {registry} `{key}`{}", format_suggestions(.suggestions))]
+    UnknownRegistryKey {
+        /// Kind of registry (e.g. `"tensor naming"`).
+        registry: &'static str,
+        /// The name that was requested.
+        key: String,
+        /// Registered names close to `key`.
+        suggestions: Vec<String>,
+    },
+
+    /// A name was registered twice without `force`.
+    #[error("{registry} `{key}` is already registered")]
+    DuplicateRegistryKey {
+        /// Kind of registry.
+        registry: &'static str,
+        /// The duplicated name.
+        key: String,
+    },
+
     /// An internal invariant was violated. This is a bug in Hale-Token, not a user error.
     #[error("internal error: {0} (please report this as a bug)")]
     Internal(String),
+}
+
+fn format_suggestions(suggestions: &[String]) -> String {
+    if suggestions.is_empty() {
+        String::new()
+    } else {
+        format!(" (did you mean: {}?)", suggestions.join(", "))
+    }
 }
 
 /// Former name of [`HaleTokenError`], kept so existing code keeps compiling.

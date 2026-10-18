@@ -18,10 +18,15 @@ use std::sync::Arc;
 
 /// A loaded model ready to run.
 pub struct Transformer {
+    /// Model configuration.
     pub config: ModelConfig,
+    /// Token embedding matrix.
     pub embeddings: WeightMatrix,
+    /// Decoder layers in order.
     pub layers: Vec<DecoderLayer>,
+    /// Final RMSNorm weight.
     pub final_norm: Vec<f32>,
+    /// Output projection to vocabulary logits.
     pub lm_head: WeightMatrix,
     rope: Rope,
     experts: Arc<dyn ExpertProvider>,

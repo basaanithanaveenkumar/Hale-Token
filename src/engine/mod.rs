@@ -110,12 +110,15 @@ impl Engine {
         })
     }
 
+    /// The loaded transformer.
     pub fn model(&self) -> &Transformer {
         &self.model
     }
+    /// The model configuration.
     pub fn config(&self) -> &ModelConfig {
         &self.model.config
     }
+    /// The tokenizer, if the checkpoint ships one.
     pub fn tokenizer(&self) -> Option<&Tokenizer> {
         self.tokenizer.as_ref()
     }

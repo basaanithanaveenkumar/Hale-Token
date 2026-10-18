@@ -4,4 +4,4 @@ mod generator;
 mod sampler;
 
 pub use generator::{generate, GenerationOptions, GenerationStats};
-pub use sampler::{Greedy, Sampler, SamplingParams, TopPSampler};
+pub use sampler::{sampler_registry, Greedy, Sampler, SamplingParams, TopPSampler};

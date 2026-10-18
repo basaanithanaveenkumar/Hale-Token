@@ -32,9 +32,11 @@ impl RoutingStats {
         }
     }
 
+    /// Number of layers tracked.
     pub fn num_layers(&self) -> usize {
         self.num_layers
     }
+    /// Number of experts per layer tracked.
     pub fn num_experts(&self) -> usize {
         self.num_experts
     }

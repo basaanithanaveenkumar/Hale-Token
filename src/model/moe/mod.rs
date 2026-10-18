@@ -19,11 +19,15 @@ use std::sync::Arc;
 /// y       = Σ weight_i · Expert_i(x)
 /// ```
 pub struct MoeLayer {
+    /// Index of the layer this block belongs to.
     pub layer: usize,
     /// `[num_experts, hidden]`
     pub router: WeightMatrix,
+    /// Experts activated per token (top-k).
     pub experts_per_token: usize,
+    /// Whether to renormalise the selected routing weights to sum to one.
     pub normalize_topk: bool,
+    /// Where expert weights come from.
     pub experts: Arc<dyn ExpertProvider>,
 }
 

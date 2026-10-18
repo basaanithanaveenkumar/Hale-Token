@@ -8,17 +8,54 @@ pub use self::greedy::Greedy;
 pub use self::sampling_params::SamplingParams;
 pub use self::top_p_sampler::TopPSampler;
 
+use std::sync::OnceLock;
+
+use crate::registry::Registry;
+
 /// Picks the next token id from a vector of logits.
 ///
 /// A trait so new strategies (min-p, mirostat, ...) can be added without
 /// touching the generation loop (Open/Closed principle).
 pub trait Sampler {
+    /// Returns the chosen token id for `logits` (one entry per vocabulary token).
     fn sample(&mut self, logits: &[f32]) -> u32;
+}
+
+/// Registry of samplers by name (`"greedy"`, `"top_p"`), for selecting a
+/// strategy from configuration or a command-line flag.
+///
+/// # Examples
+///
+/// ```
+/// use hale::generate::{sampler_registry, SamplingParams};
+///
+/// let mut sampler = sampler_registry()
+///     .build("greedy", &SamplingParams::default())
+///     .unwrap();
+/// assert_eq!(sampler.sample(&[0.0, 2.0, 1.0]), 1);
+/// ```
+pub fn sampler_registry() -> &'static Registry<dyn Sampler, SamplingParams> {
+    static REGISTRY: OnceLock<Registry<dyn Sampler, SamplingParams>> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut registry: Registry<dyn Sampler, SamplingParams> = Registry::new("sampler");
+        registry.register_force("greedy", |_| Box::new(Greedy));
+        registry.register_force("top_p", |params| Box::new(TopPSampler::new(*params)));
+        registry
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registry_builds_samplers_by_name() {
+        let params = SamplingParams::default();
+        let mut greedy = sampler_registry().build("greedy", &params).unwrap();
+        assert_eq!(greedy.sample(&[0.0, 1.0]), 1);
+        assert!(sampler_registry().build("top_p", &params).is_ok());
+        assert!(sampler_registry().build("nucleus", &params).is_err());
+    }
 
     #[test]
     fn greedy_picks_the_argmax() {

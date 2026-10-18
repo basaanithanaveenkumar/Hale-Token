@@ -6,13 +6,17 @@ use serde::Serialize;
 /// The sizes that matter for planning, independent of the architecture.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelShape {
+    /// Model name.
     pub name: String,
     /// Parameters that are not routed experts.
     pub dense_params: f64,
     /// Parameters in one routed expert.
     pub params_per_expert: f64,
+    /// Number of layers that contain routed experts.
     pub moe_layers: usize,
+    /// Routed experts per MoE layer.
     pub experts_per_layer: usize,
+    /// Experts activated per token (top-k).
     pub experts_per_token: usize,
     /// Whether Hale-Token can execute this architecture today.
     pub runnable: bool,
@@ -32,12 +36,15 @@ impl ModelShape {
         }
     }
 
+    /// Total number of routed experts across all layers.
     pub fn total_experts(&self) -> usize {
         self.moe_layers * self.experts_per_layer
     }
+    /// Total parameter count.
     pub fn total_params(&self) -> f64 {
         self.dense_params + self.total_experts() as f64 * self.params_per_expert
     }
+    /// Parameters touched per token.
     pub fn active_params(&self) -> f64 {
         self.dense_params
             + (self.moe_layers * self.experts_per_token) as f64 * self.params_per_expert

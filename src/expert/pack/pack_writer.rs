@@ -34,6 +34,7 @@ impl PackWriter {
         })
     }
 
+    /// The header this writer will emit.
     pub fn header(&self) -> &PackHeader {
         &self.header
     }

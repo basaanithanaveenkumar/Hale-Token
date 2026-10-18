@@ -60,12 +60,15 @@ impl WeightMatrix {
         Self::new(rows, cols, dtype, ByteBuf::owned(bytes))
     }
 
+    /// Number of rows.
     pub fn rows(&self) -> usize {
         self.rows
     }
+    /// Number of columns.
     pub fn cols(&self) -> usize {
         self.cols
     }
+    /// Storage dtype.
     pub fn dtype(&self) -> DType {
         self.dtype
     }

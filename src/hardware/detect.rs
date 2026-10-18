@@ -18,6 +18,7 @@ pub struct SystemInfo {
     pub logical_cpus: usize,
     /// Performance / efficiency core counts when the OS reports them.
     pub performance_cores: Option<u32>,
+    /// Number of efficiency cores, when the OS reports it.
     pub efficiency_cores: Option<u32>,
     /// True on an `aarch64` Mac.
     pub is_apple_silicon: bool,

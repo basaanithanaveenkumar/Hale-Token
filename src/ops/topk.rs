@@ -12,7 +12,9 @@ use std::collections::BinaryHeap;
 /// An index paired with its score.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Scored {
+    /// Position in the scored slice.
     pub index: usize,
+    /// The score at that position.
     pub score: f32,
 }
 

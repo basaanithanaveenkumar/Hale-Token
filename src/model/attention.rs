@@ -12,16 +12,25 @@ use crate::tensor::WeightMatrix;
 /// `num_kv_heads` key/value heads (`num_heads / num_kv_heads` queries per
 /// KV head), which shrinks the KV cache without hurting quality much.
 pub struct Attention {
+    /// Query projection.
     pub q_proj: WeightMatrix,
+    /// Key projection.
     pub k_proj: WeightMatrix,
+    /// Value projection.
     pub v_proj: WeightMatrix,
+    /// Output projection.
     pub o_proj: WeightMatrix,
     /// Per-head RMSNorm weights (Qwen3 "QK-norm"); `None` for Mixtral.
     pub q_norm: Option<Vec<f32>>,
+    /// Optional per-head key RMSNorm weight.
     pub k_norm: Option<Vec<f32>>,
+    /// Number of query heads.
     pub num_heads: usize,
+    /// Number of key/value heads.
     pub num_kv_heads: usize,
+    /// Dimension of each head.
     pub head_dim: usize,
+    /// Epsilon for the per-head norms.
     pub norm_eps: f32,
 }
 

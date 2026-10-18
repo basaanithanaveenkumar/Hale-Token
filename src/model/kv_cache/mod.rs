@@ -35,6 +35,7 @@ impl KvCache {
         self.len
     }
 
+    /// True when no positions have been cached yet.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }

@@ -9,6 +9,7 @@ pub struct TopPSampler {
 }
 
 impl TopPSampler {
+    /// Creates a sampler seeded from `params.seed`.
     pub fn new(params: SamplingParams) -> Self {
         TopPSampler {
             params,

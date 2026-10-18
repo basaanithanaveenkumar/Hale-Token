@@ -7,10 +7,15 @@ use serde::Serialize;
 /// The machine being planned for.
 #[derive(Debug, Clone, Serialize)]
 pub struct HardwareProfile {
+    /// Human-readable machine name.
     pub name: String,
+    /// Unified-memory bandwidth in GB/s.
     pub memory_bandwidth_gbps: f64,
+    /// Sequential SSD read bandwidth in GB/s.
     pub ssd_bandwidth_gbps: f64,
+    /// Installed RAM in bytes.
     pub ram_bytes: f64,
+    /// Sustained CPU throughput in GFLOP/s.
     pub cpu_gflops: f64,
 }
 
