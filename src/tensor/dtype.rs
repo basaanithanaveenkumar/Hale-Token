@@ -85,8 +85,19 @@ impl DType {
         }
     }
 
-    /// Parses a user-supplied name such as `q4_0` or `bf16`.
+    /// Parses a user-supplied name such as `q4_0` or `bf16` (see the [`FromStr`] impl).
+    ///
+    /// # Errors
+    /// [`HaleTokenError::InvalidArgument`] for an unknown name.
     pub fn parse(name: &str) -> Result<Self> {
+        name.parse()
+    }
+}
+
+impl std::str::FromStr for DType {
+    type Err = HaleTokenError;
+
+    fn from_str(name: &str) -> Result<Self> {
         match name.to_ascii_lowercase().as_str() {
             "f32" => Ok(DType::F32),
             "f16" => Ok(DType::F16),

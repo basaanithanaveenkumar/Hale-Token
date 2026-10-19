@@ -35,6 +35,6 @@ pub mod ops;
 pub mod tensor;
 pub mod tokenizer;
 
-pub use config::{Architecture, ModelConfig};
+pub use config::{Architecture, ModelConfig, HF_ARCHITECTURES};
 pub use engine::{Engine, EngineOptions};
 pub use error::{HaleTokenError, Result};

@@ -8,7 +8,7 @@
 mod architecture;
 mod model_config;
 
-pub use self::architecture::Architecture;
+pub use self::architecture::{Architecture, HF_ARCHITECTURES};
 pub use self::model_config::ModelConfig;
 
 use serde::Deserialize;
